@@ -206,7 +206,7 @@ class GroupLatentAttention(PointModule):
         # Ordered features / positions: [N_padded, C] and [N_padded, 3]
         # N_padded = n_patches × P
         feat = point.feat[order]
-        pos  = point.grid_coord[order]
+        pos  = point.grid_coord[order].float()
         N_padded = feat.shape[0]       # = n_patches × P
 
         input_dtype = feat.dtype      # preserve for final output
