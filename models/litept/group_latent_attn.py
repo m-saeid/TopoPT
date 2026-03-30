@@ -198,7 +198,8 @@ class GroupLatentAttention(PointModule):
         # get_padding_and_inverse pads N_real tokens to the nearest multiple
         # of P, so all patches are exactly P tokens (some may be padding).
         pad, unpad, cu_seqlens = point.get_padding_and_inverse(P)
-        n_patches = len(cu_seqlens) - 1
+        
+        # n_patches = len(cu_seqlens) - 1    ← this is batch size, NOT patch count
 
         order   = point.serialized_order[self.order_index][pad]
         inverse = unpad[point.serialized_inverse[self.order_index]]
@@ -208,6 +209,8 @@ class GroupLatentAttention(PointModule):
         feat = point.feat[order]
         pos  = point.grid_coord[order]
         N_padded = feat.shape[0]       # = n_patches × P
+
+        n_patches = N_padded // P      # correct: total padded tokens ÷ patch size
 
         input_dtype = feat.dtype      # preserve for final output
 
