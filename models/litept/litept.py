@@ -1,3 +1,18 @@
+"""
+models/litept/litept.py  — LitePT backbone with LaRA3D GroupLatentAttention.
+
+Changes vs original:
+  1. Imports GroupLatentAttention from group_latent_attn.py
+  2. Block gains `attn_type` parameter: "flat" | "group"
+     - "flat"  → original PointROPEAttention  (unchanged)
+     - "group" → new GroupLatentAttention (LaRA3D)
+  3. Block gains `group_size` parameter (used only when attn_type="group")
+  4. LitePT gains `enc_attn_type`, `dec_attn_type`, `group_size` parameters
+
+All other behaviour is backward-compatible; existing configs that do not
+set `enc_attn_type` default to all-"flat" (original PointROPEAttention).
+"""
+
 from functools import partial
 
 import torch
@@ -10,6 +25,13 @@ from libs.pointrope import PointROPE
 from models.builder import MODELS
 from models.modules import PointModule, PointSequential, Embedding, GridPooling, GridUnpooling
 from models.utils.structure import Point
+
+# ── NEW: import the LaRA3D group-latent attention module ─────────────────────
+from models.litept.group_latent_attn import GroupLatentAttention
+
+
+# ── Original PointROPEAttention (unchanged) ───────────────────────────────────
+
 class PointROPEAttention(PointModule):
     def __init__(
         self,
@@ -38,11 +60,9 @@ class PointROPEAttention(PointModule):
         self.proj_drop = torch.nn.Dropout(proj_drop)
         self.softmax = torch.nn.Softmax(dim=-1)
 
-        # pointrope
         self.rope = PointROPE(freq=rope_freq)
 
     def forward(self, point):
-
         H = self.num_heads
         K = self.patch_size
         C = self.channels
@@ -52,27 +72,23 @@ class PointROPEAttention(PointModule):
         order = point.serialized_order[self.order_index][pad]
         inverse = unpad[point.serialized_inverse[self.order_index]]
 
-        # padding and reshape feat and batch for serialized point patch
-        qkv = self.qkv(point.feat)[order] # [N, C]
+        qkv = self.qkv(point.feat)[order]
 
-        ## apply pointrope
-        pos = point.grid_coord[order] # [N, 3]
+        pos = point.grid_coord[order]
         pos = pos.reshape(-1, 3).unsqueeze(0)
 
         q, k, v = qkv.half().chunk(3, dim=-1)
-        q = q.reshape(-1, H, C // H).transpose(0,1)[None] # [1, H, N, head_dim] 
-        k = k.reshape(-1, H, C // H).transpose(0,1)[None] # [1, H, N, head_dim] 
+        q = q.reshape(-1, H, C // H).transpose(0,1)[None]
+        k = k.reshape(-1, H, C // H).transpose(0,1)[None]
 
-        # workround to make pointrope cuda float32 happy
-        q = self.rope(q.float(), pos).to(q.dtype) # [1, H, N, head_dim] 
-        k = self.rope(k.float(), pos).to(k.dtype) # [1, H, N, head_dim]
+        q = self.rope(q.float(), pos).to(q.dtype)
+        k = self.rope(k.float(), pos).to(k.dtype)
 
-        # assemble input for flash attention
         qkv_rotated = torch.stack([
             q.squeeze(0).transpose(0,1),
             k.squeeze(0).transpose(0,1),
             v.reshape(-1, H, C // H)
-        ], dim=1) # [N, 3, H, head_dim] 
+        ], dim=1)
 
         feat = flash_attn.flash_attn_varlen_qkvpacked_func(
             qkv_rotated,
@@ -85,7 +101,6 @@ class PointROPEAttention(PointModule):
         feat = feat.to(qkv.dtype)
         feat = feat[inverse]
 
-        # ffn
         feat = self.proj(feat)
         feat = self.proj_drop(feat)
         point.feat = feat
@@ -119,6 +134,17 @@ class MLP(nn.Module):
 
 
 class Block(PointModule):
+    """
+    LitePT transformer block.
+
+    Supports two attention modes via `attn_type`:
+      "flat"  — original PointROPEAttention (default, backward-compatible)
+      "group" — GroupLatentAttention / LaRA3D (new, efficient)
+
+    When attn_type="group", `group_size` G is required (G divides patch_size).
+    All other parameters are shared between both modes.
+    """
+
     def __init__(
         self,
         channels,
@@ -138,45 +164,66 @@ class Block(PointModule):
         enable_conv=True,
         enable_attn=True,
         rope_freq=100.0,
+        # ── NEW parameters ────────────────────────────────────────────────
+        attn_type: str = "flat",   # "flat" or "group"
+        group_size: int = 32,      # G (only used when attn_type="group")
     ):
         super().__init__()
         self.channels = channels
         self.pre_norm = pre_norm
-
         self.enable_conv = enable_conv
         self.enable_attn = enable_attn
+        self.attn_type = attn_type
 
         if self.enable_conv:
             self.conv = PointSequential(
                 spconv.SubMConv3d(
-                    channels,
-                    channels,
-                    kernel_size=3,
-                    bias=True,
+                    channels, channels, kernel_size=3, bias=True,
                     indice_key=cpe_indice_key,
                 ),
                 nn.Linear(channels, channels),
                 norm_layer(channels),
             )
         else:
-            self.norm0 = PointSequential(
-                norm_layer(channels),
-            )
-
+            self.norm0 = PointSequential(norm_layer(channels))
 
         if self.enable_attn:
             self.norm1 = PointSequential(norm_layer(channels))
-            self.attn = PointROPEAttention(
-                channels=channels,
-                patch_size=patch_size,
-                rope_freq=rope_freq,
-                num_heads=num_heads,
-                qkv_bias=qkv_bias,
-                qk_scale=qk_scale,
-                attn_drop=attn_drop,
-                proj_drop=proj_drop,
-                order_index=order_index,
-            )
+
+            # ── Select attention implementation ──────────────────────────
+            if attn_type == "group":
+                # GroupLatentAttention (LaRA3D) — efficient hierarchical attn
+                if patch_size % group_size != 0:
+                    raise ValueError(
+                        f"Block: patch_size ({patch_size}) must be divisible by "
+                        f"group_size ({group_size}) when attn_type='group'."
+                    )
+                self.attn = GroupLatentAttention(
+                    channels=channels,
+                    num_heads=num_heads,
+                    patch_size=patch_size,
+                    group_size=group_size,
+                    rope_freq=rope_freq,
+                    qkv_bias=qkv_bias,
+                    qk_scale=qk_scale,
+                    attn_drop=attn_drop,
+                    proj_drop=proj_drop,
+                    order_index=order_index,
+                )
+            else:
+                # Original flat PointROPEAttention (default)
+                self.attn = PointROPEAttention(
+                    channels=channels,
+                    patch_size=patch_size,
+                    rope_freq=rope_freq,
+                    num_heads=num_heads,
+                    qkv_bias=qkv_bias,
+                    qk_scale=qk_scale,
+                    attn_drop=attn_drop,
+                    proj_drop=proj_drop,
+                    order_index=order_index,
+                )
+
             self.norm2 = PointSequential(norm_layer(channels))
             self.mlp = PointSequential(
                 MLP(
@@ -222,6 +269,34 @@ class Block(PointModule):
 
 @MODELS.register_module("LitePT")
 class LitePT(PointModule):
+    """
+    LitePT backbone with optional LaRA3D GroupLatentAttention.
+
+    New parameters (all optional, backward-compatible):
+    ────────────────────────────────────────────────────
+    enc_attn_type : tuple[str] (length = num_stages)
+        Per-stage attention type for the encoder.
+        "flat"  — original PointROPEAttention (default for all stages)
+        "group" — GroupLatentAttention (LaRA3D)
+        Example: ("flat","flat","flat","group","group")
+        Only stages where enc_attn[s]=True use attention; enc_attn_type
+        for conv-only stages is ignored.
+
+    dec_attn_type : tuple[str] (length = num_stages-1)
+        Same for decoder stages. Defaults to all "flat".
+
+    group_size : int  (default 32)
+        G — number of groups per patch for GroupLatentAttention.
+        Must divide every patch_size where attn_type="group".
+        Ignored for stages with attn_type="flat".
+
+    Typical usage for LaRA3D experiments
+    ─────────────────────────────────────
+    # Use group attention at the two deepest encoder stages (3,4):
+    enc_attn_type = ("flat", "flat", "flat", "group", "group")
+    group_size    = 32   # G=32, K = patch_size[s] // 32
+    """
+
     def __init__(
         self,
         in_channels=4,
@@ -250,6 +325,10 @@ class LitePT(PointModule):
         pre_norm=True,
         shuffle_orders=True,
         enc_mode=False,
+        # ── NEW parameters ─────────────────────────────────────────────────
+        enc_attn_type=None,   # tuple[str] or None → defaults to all "flat"
+        dec_attn_type=None,   # tuple[str] or None → defaults to all "flat"
+        group_size: int = 32, # G for GroupLatentAttention
     ):
         super().__init__()
         self.num_stages = len(enc_depths)
@@ -262,23 +341,45 @@ class LitePT(PointModule):
         self.dec_conv = dec_conv
         self.dec_attn = dec_attn
 
+        # ── Resolve attn_type tuples ──────────────────────────────────────
+        # Defaults to "flat" for every stage (backward-compatible).
+        if enc_attn_type is None:
+            enc_attn_type = tuple("flat" for _ in range(self.num_stages))
+        if dec_attn_type is None:
+            dec_attn_type = tuple("flat" for _ in range(self.num_stages - 1))
+
+        self.enc_attn_type = enc_attn_type
+        self.dec_attn_type = dec_attn_type
+        self.group_size    = group_size
+
+        # ── Assertions ────────────────────────────────────────────────────
         assert self.num_stages == len(stride) + 1
         assert self.num_stages == len(enc_depths)
         assert self.num_stages == len(enc_channels)
         assert self.num_stages == len(enc_num_head)
         assert self.num_stages == len(enc_patch_size)
+        assert self.num_stages == len(enc_attn_type)
         assert self.enc_mode or self.num_stages == len(dec_depths) + 1
         assert self.enc_mode or self.num_stages == len(dec_channels) + 1
         assert self.enc_mode or self.num_stages == len(dec_num_head) + 1
         assert self.enc_mode or self.num_stages == len(dec_patch_size) + 1
 
-        # norm layers
+        # ── Validate group_size compatibility ─────────────────────────────
+        for s in range(self.num_stages):
+            if enc_attn[s] and enc_attn_type[s] == "group":
+                P = enc_patch_size[s]
+                if P % group_size != 0:
+                    raise ValueError(
+                        f"enc_patch_size[{s}]={P} must be divisible by "
+                        f"group_size={group_size}."
+                    )
+
+        # ── Norm / activation ─────────────────────────────────────────────
         bn_layer = partial(nn.BatchNorm1d, eps=1e-3, momentum=0.01)
         ln_layer = nn.LayerNorm
-
-        # activation layers
         act_layer = nn.GELU
 
+        # ── Embedding ─────────────────────────────────────────────────────
         self.embedding = Embedding(
             in_channels=in_channels,
             embed_channels=enc_channels[0],
@@ -286,14 +387,14 @@ class LitePT(PointModule):
             act_layer=act_layer,
         )
 
-        # encoder
+        # ── Encoder ───────────────────────────────────────────────────────
         enc_drop_path = [
             x.item() for x in torch.linspace(0, drop_path, sum(enc_depths))
         ]
         self.enc = PointSequential()
         for s in range(self.num_stages):
             enc_drop_path_ = enc_drop_path[
-                sum(enc_depths[:s]) : sum(enc_depths[: s + 1])
+                sum(enc_depths[:s]): sum(enc_depths[:s+1])
             ]
             enc = PointSequential()
             if s > 0:
@@ -305,9 +406,8 @@ class LitePT(PointModule):
                         norm_layer=bn_layer,
                         act_layer=act_layer,
                         re_serialization=enc_attn[s],
-                        serialization_order=self.order
+                        serialization_order=self.order,
                     ),
-
                     name="down",
                 )
             for i in range(enc_depths[s]):
@@ -329,41 +429,43 @@ class LitePT(PointModule):
                         cpe_indice_key=f"stage{s}",
                         enable_conv=enc_conv[s],
                         enable_attn=enc_attn[s],
-                        rope_freq=enc_rope_freq[s]
+                        rope_freq=enc_rope_freq[s],
+                        # ── NEW ───────────────────────────────────────────
+                        attn_type=enc_attn_type[s],
+                        group_size=group_size,
                     ),
                     name=f"block{i}",
                 )
             if len(enc) != 0:
                 self.enc.add(module=enc, name=f"enc{s}")
 
-        # decoder
+        # ── Decoder ───────────────────────────────────────────────────────
         if not self.enc_mode:
             dec_drop_path = [
                 x.item() for x in torch.linspace(0, drop_path, sum(dec_depths))
             ]
             self.dec = PointSequential()
-            dec_channels = list(dec_channels) + [enc_channels[-1]]
+            dec_channels_ext = list(dec_channels) + [enc_channels[-1]]
             for s in reversed(range(self.num_stages - 1)):
                 dec_drop_path_ = dec_drop_path[
-                    sum(dec_depths[:s]) : sum(dec_depths[: s + 1])
+                    sum(dec_depths[:s]): sum(dec_depths[:s+1])
                 ]
                 dec_drop_path_.reverse()
                 dec = PointSequential()
                 dec.add(
                     GridUnpooling(
-                        in_channels=dec_channels[s + 1],
+                        in_channels=dec_channels_ext[s + 1],
                         skip_channels=enc_channels[s],
-                        out_channels=dec_channels[s],
+                        out_channels=dec_channels_ext[s],
                         norm_layer=bn_layer,
                         act_layer=act_layer,
                     ),
-
                     name="up",
                 )
                 for i in range(dec_depths[s]):
                     dec.add(
                         Block(
-                            channels=dec_channels[s],
+                            channels=dec_channels_ext[s],
                             num_heads=dec_num_head[s],
                             patch_size=dec_patch_size[s],
                             mlp_ratio=mlp_ratio,
@@ -379,23 +481,16 @@ class LitePT(PointModule):
                             cpe_indice_key=f"stage{s}",
                             enable_conv=dec_conv[s],
                             enable_attn=dec_attn[s],
-                            rope_freq=dec_rope_freq[s]
+                            rope_freq=dec_rope_freq[s],
+                            # ── NEW ───────────────────────────────────────
+                            attn_type=dec_attn_type[s] if s < len(dec_attn_type) else "flat",
+                            group_size=group_size,
                         ),
                         name=f"block{i}",
                     )
                 self.dec.add(module=dec, name=f"dec{s}")
 
     def forward(self, data_dict):
-        """
-        data_dict is the batched input point cloud, it should contain as least:
-        1. feat [N, input_dim]: input feature for the point cloud
-        2. grid_coord [N, 3]: voxelized coordinate after grid sampling 
-           or/and
-           coord [N, 3]: original coordinate + grid_size: grid_size used for grid sampling
-        3. offset [batch_size]: separator of point clouds in batched data
-           or/and
-           batch [N]: batch index of each point
-        """
         point = Point(data_dict)
         if self.enc_attn[0]:
             point.serialization(order=self.order, shuffle_orders=self.shuffle_orders)
