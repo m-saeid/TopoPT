@@ -204,13 +204,22 @@ class GroupLatentAttention(PointModule):
         order   = point.serialized_order[self.order_index][pad]
         inverse = unpad[point.serialized_inverse[self.order_index]]
 
-        # Ordered features / positions: [N_padded, C] and [N_padded, 3]
-        # N_padded = n_patches × P
         feat = point.feat[order]
         pos  = point.grid_coord[order]
-        N_padded = feat.shape[0]       # = n_patches × P
+        N_real = feat.shape[0]          # actual token count; NOT guaranteed multiple of P
+        input_dtype = feat.dtype
 
-        n_patches = N_padded // P      # correct: total padded tokens ÷ patch size
+        # ── Physical pad to multiple of P = G × K ────────────────────────────────
+        # flash_attn_varlen handles variable-length scenes natively via cu_seqlens,
+        # so N_real across the batch may have a remainder mod P. We pad explicitly
+        # here so the group reshape is always valid, then trim at the end.
+        pad_size = (P - N_real % P) % P   # 0 when already aligned
+        if pad_size > 0:
+            feat = torch.cat([feat, feat[-1:].expand(pad_size, -1)], dim=0)
+            pos  = torch.cat([pos,  pos[-1:].expand(pad_size, -1)], dim=0)
+
+        N_padded = N_real + pad_size    # guaranteed multiple of P
+        n_patches = N_padded // P
 
         input_dtype = feat.dtype      # preserve for final output
 
@@ -311,7 +320,10 @@ class GroupLatentAttention(PointModule):
         out = self.proj_drop(out)
 
         # Unshuffle back to original point order: [N_real, C]
-        point.feat = out[inverse]
+        # point.feat = out[inverse]
+        # Trim physical padding, then unshuffle to original point order
+        point.feat = out[:N_real][inverse]
+
         return point
 
     # ── Repr ───────────────────────────────────────────────────────────────
