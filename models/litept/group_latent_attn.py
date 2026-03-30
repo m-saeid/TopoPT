@@ -206,7 +206,7 @@ class GroupLatentAttention(PointModule):
         # Ordered features / positions: [N_padded, C] and [N_padded, 3]
         # N_padded = n_patches × P
         feat = point.feat[order]
-        pos  = point.grid_coord[order].float()
+        pos  = point.grid_coord[order]
         N_padded = feat.shape[0]       # = n_patches × P
 
         input_dtype = feat.dtype      # preserve for final output
@@ -250,7 +250,8 @@ class GroupLatentAttention(PointModule):
         # Group latent: mean of K member token features
         group_latents = local_out.mean(dim=1)      # [n_patches*G, C]
         # Group centroid: mean of K member 3D grid coordinates
-        group_pos = pos_grouped.mean(dim=1)        # [n_patches*G, 3]
+        # group_pos = pos_grouped.mean(dim=1)        # [n_patches*G, 3]
+        group_pos = pos_grouped.float().mean(dim=1).long()   # [n_patches*G, 3] Long
 
         # ── Step 3: Global inter-group self-attention (LaRa core idea) ────
         # LayerNorm on group latents for training stability
