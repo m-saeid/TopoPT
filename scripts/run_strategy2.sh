@@ -104,7 +104,7 @@ run_exp() {
         return 1
     fi
 
-    sh scripts/train.sh -g "$GPU" -d "$DATASET" -c "$CFG" -n "$NAME"
+    bash scripts/train.sh -g "$GPU" -d "$DATASET" -c "$CFG" -n "$NAME"
     local ec=$?
 
     if [ $ec -eq 0 ]; then
@@ -112,7 +112,7 @@ run_exp() {
         local ckpt="exp/${DATASET}/${NAME}/model/model_best.pth"
         if [ -f "$ckpt" ]; then
             echo -e "${CYN}  Auto-profiling...${NC}"
-            sh scripts/profile.sh -c "$CFG" -w "$ckpt" \
+            bash scripts/profile.sh -c "$CFG" -w "$ckpt" \
                 -n "${NAME}-trained" -j "LitePT-Profiling" || true
         fi
     else
@@ -124,7 +124,7 @@ run_exp() {
 run_profile_random() {
     local CFG="$1" NAME="$2"
     echo -e "${CYN}  Profile (random): ${NAME}${NC}"
-    sh scripts/profile.sh -c "$CFG" -n "${NAME}-random" -j "LitePT-Profiling" || true
+    bash scripts/profile.sh -c "$CFG" -n "${NAME}-random" -j "LitePT-Profiling" || true
 }
 
 run_profile_trained() {
@@ -132,7 +132,7 @@ run_profile_trained() {
     local ckpt="exp/${DATASET}/${NAME}/model/model_best.pth"
     if [ -f "$ckpt" ]; then
         echo -e "${CYN}  Profile (trained): ${NAME}${NC}"
-        sh scripts/profile.sh -c "$CFG" -w "$ckpt" \
+        bash scripts/profile.sh -c "$CFG" -w "$ckpt" \
             -n "${NAME}-trained" -j "LitePT-Profiling" || true
     else
         echo -e "${YEL}  No checkpoint: ${ckpt}${NC}"
@@ -346,7 +346,7 @@ case "$MACHINE" in
     check)           check           ;;
     *)
         echo ""
-        echo "Usage: sh scripts/run_strategy2.sh [COMMAND]"
+        echo "Usage: bash scripts/run_strategy2.sh [COMMAND]"
         echo ""
         echo "  machine1         RTX 5090:  S6★ lw-e+LaRA3D(G=32)  [KEY]"
         echo "  machine2         3090 #1:   S8  lw-c+LaRA3D(G=32)  [GENERALITY]"
