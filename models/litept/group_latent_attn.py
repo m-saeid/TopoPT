@@ -534,7 +534,7 @@ class GroupLatentAttentionV2(PointModule):
         gv = gv.reshape(n_patches * G_eff, H, C // H)
 
         # PointROPE on group centroid positions
-        gq, gk = self._apply_rope(gq, gk, group_pos_eff.reshape(n_patches * G_eff, 3)   #.float())
+        gq, gk = self._apply_rope(gq, gk, group_pos_eff.reshape(n_patches * G_eff, 3))   #.float())
 
         global_qkv_packed = torch.stack([gq, gk, gv], dim=1)  # [n_patches*G_eff, 3, H, hd]
         global_cu = torch.arange(
