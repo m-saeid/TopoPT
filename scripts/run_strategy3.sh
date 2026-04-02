@@ -51,7 +51,7 @@
 #   bash scripts/run_strategy3.sh machine1     # RTX 5090: S6★ (KEY)
 #   bash scripts/run_strategy3.sh machine2     # RTX 3090: S9  (GENERALITY)
 #   bash scripts/run_strategy3.sh machine1_lat2  # S10 ablation (optional)
-#   bash scripts/run_strategy3.sh profile      # profile all V2 configs
+#   bash scripts/run_strategy3.sh profile      # profile all V3 configs
 #   bash scripts/run_strategy3.sh table        # print results (S1–S10)
 #   bash scripts/run_strategy3.sh check        # verify files exist
 # =============================================================================
