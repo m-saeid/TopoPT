@@ -7,5 +7,3 @@ from .litept import *
 
 # Instance Segmentation
 from .point_group import *
-
-from .distillation import DistillationSegmentorV2
