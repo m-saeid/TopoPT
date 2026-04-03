@@ -260,12 +260,12 @@ class Embedding(PointModule):
         embed_channels,
         norm_layer=None,
         act_layer=None,
+        indice_key_stem: str = "stem",   # ← add this param
     ):
         super().__init__()
         self.in_channels = in_channels
         self.embed_channels = embed_channels
 
-        # TODO: check remove spconv
         self.stem = PointSequential(
             conv=spconv.SubMConv3d(
                 in_channels,
@@ -273,7 +273,7 @@ class Embedding(PointModule):
                 kernel_size=5,
                 padding=1,
                 bias=False,
-                indice_key="stem",
+                indice_key=indice_key_stem,   # ← use param instead of hardcoded "stem"
             )
         )
         if norm_layer is not None:

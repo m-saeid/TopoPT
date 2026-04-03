@@ -159,8 +159,7 @@ class Block(PointModule):
         act_layer=nn.GELU,
         pre_norm=True,
         order_index=0,
-        cpe_indice_key=None,
-        key_prefix: str = "", 
+        cpe_indice_key=None, 
         enable_conv=True,
         enable_attn=True,
         rope_freq=100.0,
@@ -169,6 +168,7 @@ class Block(PointModule):
         group_size: int = 32,       # G (used when attn_type != "flat")
         num_latents: int = 1,       # n_lat (used only when attn_type == "group_v2")
         gate_init: float = 0.0,     # initial gate value (V2 only)
+        key_prefix: str = "",
     ):
         super().__init__()
         self.channels    = channels
@@ -360,13 +360,13 @@ class LitePT(PointModule):
         pre_norm=True,
         shuffle_orders=True,
         enc_mode=False,
-        key_prefix: str = "",
         # ── New parameters (backward-compatible defaults) ────────────────
         enc_attn_type=None,     # tuple[str] or None → all "flat"
         dec_attn_type=None,     # tuple[str] or None → all "flat"
         group_size: int   = 32,
         num_latents: int  = 1,
         gate_init: float  = 0.0,
+        key_prefix: str = "",
     ):
         super().__init__()
         self.num_stages   = len(enc_depths)
@@ -424,6 +424,7 @@ class LitePT(PointModule):
             embed_channels=enc_channels[0],
             norm_layer=bn_layer,
             act_layer=act_layer,
+            indice_key_stem=f"{key_prefix}stem",
         )
 
         # ── Encoder ───────────────────────────────────────────────────────
@@ -466,7 +467,6 @@ class LitePT(PointModule):
                         pre_norm=pre_norm,
                         order_index=i % len(self.order),
                         cpe_indice_key=f"stage{s}",
-                        key_prefix=key_prefix,                  # thread through
                         enable_conv=enc_conv[s],
                         enable_attn=enc_attn[s],
                         rope_freq=enc_rope_freq[s],
@@ -474,6 +474,7 @@ class LitePT(PointModule):
                         group_size=group_size,
                         num_latents=num_latents,
                         gate_init=gate_init,
+                        key_prefix=key_prefix,                  # thread through
                     ),
                     name=f"block{i}",
                 )
@@ -535,6 +536,7 @@ class LitePT(PointModule):
                             group_size=group_size,
                             num_latents=num_latents,
                             gate_init=gate_init,
+                            key_prefix=key_prefix,
                         ),
                         name=f"block{i}",
                     )
