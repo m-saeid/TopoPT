@@ -478,13 +478,6 @@ class LitePT(PointModule):
                     ),
                     name=f"block{i}",
                 )
-                # Same for Embedding:
-                self.stem = PointSequential(
-                    conv=spconv.SubMConv3d(
-                        ...,
-                        indice_key=f"{key_prefix}stem",   # ← prefixed
-                    )
-                )
 
             if len(enc) != 0:
                 self.enc.add(module=enc, name=f"enc{s}")
