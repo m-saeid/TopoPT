@@ -48,6 +48,9 @@ from models.builder import MODELS, build_model
 from models.losses.builder import build_criteria
 from models.utils.structure import Point
 
+# ─────────────────────────────────────────────────────────────────────
+# Training-mode override — locks teacher in eval permanently
+# ─────────────────────────────────────────────────────────────────────
 
 @MODELS.register_module("DistillationSegmentorV2")
 class DistillationSegmentorV2(nn.Module):
@@ -279,6 +282,22 @@ class DistillationSegmentorV2(nn.Module):
         return total / max(n, 1)
 
     # ─────────────────────────────────────────────────────────────────────
+    # Training-mode override — locks teacher in eval permanently
+    # ─────────────────────────────────────────────────────────────────────
+
+    def train(self, mode: bool = True):
+        """Keep student/projectors in requested mode; teacher is always eval.
+
+        Without this override, the trainer's per-epoch `model.train()` call
+        recursively sets teacher_backbone to training=True, which forces
+        spconv to re-profile eval-mode CUDA kernels every epoch — and that
+        profiling fails on some GPU/spconv version combinations.
+        """
+        super().train(mode)
+        self.teacher_backbone.eval()   # always eval, regardless of caller
+        return self
+
+    # ─────────────────────────────────────────────────────────────────────
     # Forward pass
     # ─────────────────────────────────────────────────────────────────────
 
@@ -290,20 +309,23 @@ class DistillationSegmentorV2(nn.Module):
         # ── Student forward ───────────────────────────────────────────────
         point = self.backbone(Point(input_dict))            # populates _s_feats
 
-        # ── Teacher forward (no grad, eval BN) ────────────────────────────
-        # Done first so teacher features are resident when we compute KD losses.
-        # Teacher is always frozen; running it in eval mode prevents BN stat drift.
-        # if self.training:
-        #     with torch.no_grad():
-        #         self.teacher_backbone.eval()
-        #         self.teacher_backbone(Point(input_dict))   # populates _t_feats
-
+        # ── Teacher forward (no grad, eval BN/DropPath) ───────────────────
         if self.training:
+            self.teacher_backbone.eval()
+            teacher_input = {k: v for k, v in input_dict.items()}
+
+            # spconv profiles CUDA kernels the first time a new (channels,
+            # kernel_size, dtype, training_flag) combination is seen.
+            # The student warms up training=True kernels; the teacher needs
+            # training=False (eval) kernels profiled separately.
+            # Running once WITHOUT no_grad lets spconv complete that profiling.
+            # All subsequent steps hit the cache and run under no_grad normally.
+            if not getattr(self, '_teacher_spconv_warmed', False):
+                self.teacher_backbone(Point(teacher_input))   # profiles eval kernels
+                self._teacher_spconv_warmed = True
+
             with torch.no_grad():
-                self.teacher_backbone.eval()
-                # Shallow copy: protects dict keys from teacher-side mutations
-                teacher_input = {k: v for k, v in input_dict.items()}
-                self.teacher_backbone(Point(teacher_input))
+                self.teacher_backbone(Point(teacher_input))   # populates _t_feats
 
         # ── Unpooling (mirrors DefaultSegmentorV2 exactly) ────────────────
         if isinstance(point, Point):
@@ -316,11 +338,11 @@ class DistillationSegmentorV2(nn.Module):
                 point = parent
             feat = point.feat
         else:
-            feat = point  # backbone returned a raw tensor (legacy path)
+            feat = point
 
         seg_logits = self.seg_head(feat)
 
-        # ── Training: seg loss + KD losses ────────────────────────────────
+        # ── Training: seg loss + KD losses ───────────────────────────────
         if self.training:
             segment = input_dict.get("segment", None)
             if segment is None:
@@ -346,12 +368,10 @@ class DistillationSegmentorV2(nn.Module):
                 rel_kd   = rel_loss.detach(),
             )
 
-        # ── Eval with labels (SemSegEvaluator calls model with 'segment') ─
         elif "segment" in input_dict:
             loss = self.criteria(seg_logits, input_dict["segment"])
             return dict(loss=loss, seg_logits=seg_logits)
 
-        # ── Test / inference (no labels) ──────────────────────────────────
         else:
             return dict(seg_logits=seg_logits)
 
