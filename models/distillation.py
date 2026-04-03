@@ -290,10 +290,17 @@ class DistillationSegmentorV2(nn.Module):
         # ── Teacher forward (no grad, eval BN) ────────────────────────────
         # Done first so teacher features are resident when we compute KD losses.
         # Teacher is always frozen; running it in eval mode prevents BN stat drift.
+        # if self.training:
+        #     with torch.no_grad():
+        #         self.teacher_backbone.eval()
+        #         self.teacher_backbone(Point(input_dict))   # populates _t_feats
+
         if self.training:
             with torch.no_grad():
                 self.teacher_backbone.eval()
-                self.teacher_backbone(Point(input_dict))   # populates _t_feats
+                # Shallow copy: protects dict keys from teacher-side mutations
+                teacher_input = {k: v for k, v in input_dict.items()}
+                self.teacher_backbone(Point(teacher_input))
 
         # ── Student forward ───────────────────────────────────────────────
         point = self.backbone(Point(input_dict))            # populates _s_feats

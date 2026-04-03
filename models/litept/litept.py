@@ -160,6 +160,7 @@ class Block(PointModule):
         pre_norm=True,
         order_index=0,
         cpe_indice_key=None,
+        key_prefix: str = "", 
         enable_conv=True,
         enable_attn=True,
         rope_freq=100.0,
@@ -180,7 +181,8 @@ class Block(PointModule):
             self.conv = PointSequential(
                 spconv.SubMConv3d(
                     channels, channels, kernel_size=3, bias=True,
-                    indice_key=cpe_indice_key,
+                    # indice_key=cpe_indice_key,
+                    indice_key=f"{key_prefix}{cpe_indice_key}",   # prefixed
                 ),
                 nn.Linear(channels, channels),
                 norm_layer(channels),
@@ -358,6 +360,7 @@ class LitePT(PointModule):
         pre_norm=True,
         shuffle_orders=True,
         enc_mode=False,
+        key_prefix: str = "",
         # ── New parameters (backward-compatible defaults) ────────────────
         enc_attn_type=None,     # tuple[str] or None → all "flat"
         dec_attn_type=None,     # tuple[str] or None → all "flat"
@@ -374,6 +377,7 @@ class LitePT(PointModule):
         self.enc_attn     = enc_attn
         self.dec_conv     = dec_conv
         self.dec_attn     = dec_attn
+        self.key_prefix   = key_prefix
 
         # ── Resolve attn_type tuples ──────────────────────────────────────
         if enc_attn_type is None:
@@ -462,6 +466,7 @@ class LitePT(PointModule):
                         pre_norm=pre_norm,
                         order_index=i % len(self.order),
                         cpe_indice_key=f"stage{s}",
+                        key_prefix=key_prefix,                  # thread through
                         enable_conv=enc_conv[s],
                         enable_attn=enc_attn[s],
                         rope_freq=enc_rope_freq[s],
@@ -472,6 +477,14 @@ class LitePT(PointModule):
                     ),
                     name=f"block{i}",
                 )
+                # Same for Embedding:
+                self.stem = PointSequential(
+                    conv=spconv.SubMConv3d(
+                        ...,
+                        indice_key=f"{key_prefix}stem",   # ← prefixed
+                    )
+                )
+
             if len(enc) != 0:
                 self.enc.add(module=enc, name=f"enc{s}")
 

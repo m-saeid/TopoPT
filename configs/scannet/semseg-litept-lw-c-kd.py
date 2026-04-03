@@ -93,6 +93,7 @@ model = dict(
         enc_conv=(True, True, True, False, False),
         enc_attn=(False, False, False, True, True),
         enc_rope_freq=(100.0, 100.0, 100.0, 100.0, 100.0),
+        # Decoder params are irrelevant but keep them for config consistency:
         dec_depths=(0, 0, 0, 0),
         dec_channels=(72, 72, 144, 252),
         dec_num_head=(4, 4, 8, 14),
@@ -108,7 +109,8 @@ model = dict(
         drop_path=0.3,
         shuffle_orders=True,
         pre_norm=True,
-        enc_mode=False,
+        key_prefix="teacher_",   # guarantees no cache collision with student
+        enc_mode=True,
     ),
 
     # ── Teacher checkpoint ────────────────────────────────────────────────────
