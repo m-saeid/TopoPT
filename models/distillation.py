@@ -38,19 +38,38 @@ How to use:
   Drop-in replacement for DefaultSegmentorV2. Set type="DistillationSegmentorV2"
   and add teacher_backbone + teacher_ckpt. All other params are identical.
   At inference the model is identical to DefaultSegmentorV2 — teacher is absent.
+
+─────────────────────────────────────────────────────────────────────────────────
+SPCONV CUTLASS COMPATIBILITY NOTE
+─────────────────────────────────────────────────────────────────────────────────
+spconv selects different CUTLASS kernel templates based on SubMConv3d.training:
+
+  training=True  → training-mode CUTLASS templates  (already profiled/cached
+                   when the student backbone runs — guaranteed to work)
+  training=False → eval-mode CUTLASS templates      (separate profiling required;
+                   may fail on some GPU/spconv-version combinations because
+                   eval templates use a different CUTLASS specialisation path)
+
+To avoid the "can't find suitable algorithm for 0" RuntimeError we:
+  1. Keep teacher's spconv layers in training=True so they share the same
+     already-proven CUTLASS path as the student.
+  2. Keep teacher's BatchNorm and DropPath layers in eval mode so the teacher
+     produces stable, deterministic features (running stats, no path drop).
+  3. Run teacher BEFORE student each step so CUTLASS profiling (first batch only)
+     happens with maximum free GPU memory.
+  4. Deep-clone input tensors for teacher so student mutations cannot corrupt them.
+─────────────────────────────────────────────────────────────────────────────────
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import spconv.pytorch as spconv
 
 from models.builder import MODELS, build_model
 from models.losses.builder import build_criteria
 from models.utils.structure import Point
 
-# ─────────────────────────────────────────────────────────────────────
-# Training-mode override — locks teacher in eval permanently
-# ─────────────────────────────────────────────────────────────────────
 
 @MODELS.register_module("DistillationSegmentorV2")
 class DistillationSegmentorV2(nn.Module):
@@ -98,7 +117,7 @@ class DistillationSegmentorV2(nn.Module):
         self.seg_head = nn.Linear(backbone_out_channels, num_classes)
         self.criteria = build_criteria(criteria)
 
-        # ── Teacher (always frozen, eval-only) ────────────────────────────
+        # ── Teacher (always frozen) ────────────────────────────────────────
         self.teacher_backbone = build_model(teacher_backbone)
         self._load_teacher(teacher_ckpt)
         for p in self.teacher_backbone.parameters():
@@ -203,6 +222,67 @@ class DistillationSegmentorV2(nn.Module):
                       f"stage {s} will be skipped during distillation.")
 
     # ─────────────────────────────────────────────────────────────────────
+    # Teacher mode management  ← THE CORE FIX
+    # ─────────────────────────────────────────────────────────────────────
+
+    def _apply_teacher_distill_mode(self) -> None:
+        """Put teacher backbone into 'distillation eval' mode.
+
+        WHY THIS IS NECESSARY
+        ─────────────────────
+        spconv's SubMConv3d calls:
+            self._conv_forward(self.training, ...)
+        and uses self.training to select CUTLASS kernel templates:
+
+          training=True  → training CUTLASS templates  → already profiled &
+                           cached when the student runs → ALWAYS works.
+          training=False → eval CUTLASS templates      → separate profiling
+                           required; fails with "can't find suitable algorithm
+                           for 0" on some GPU/spconv combinations.
+
+        The solution: keep spconv layers at training=True (reuse student's
+        proven CUTLASS path) while setting everything else to eval:
+          • BatchNorm  training=False → uses running mean/var, not batch stats.
+          • DropPath   training=False → no random path drops (deterministic).
+          • All other  training=False → safe default.
+
+        This is called:
+          (a) in train() override  — so model.train() never breaks it, and
+          (b) at the top of each teacher forward — belt-and-suspenders guard.
+        """
+        # Step 1: set entire teacher to eval (BN + DropPath are now correct)
+        self.teacher_backbone.eval()
+
+        # Step 2: flip ONLY spconv conv layers back to training=True so they
+        # use the training CUTLASS path (same as student — proven to work).
+        for m in self.teacher_backbone.modules():
+            if isinstance(m, (
+                spconv.SubMConv3d,
+                spconv.SparseConv3d,
+                spconv.SparseInverseConv3d,
+                spconv.SparseConvTranspose3d,
+            )):
+                m.training = True
+
+    def train(self, mode: bool = True) -> "DistillationSegmentorV2":
+        """Override so the trainer's per-epoch model.train() never breaks teacher mode.
+
+        Without this, Trainer.train() calls self.model.train() which recursively
+        sets every submodule — including teacher_backbone — to training=True for
+        ALL layers (including BN). Then forward() calls .eval() mid-step, causing
+        spconv to see a new eval-mode config and attempt (failing) re-profiling.
+
+        With this override, after the student + projectors are set to `mode`,
+        the teacher is immediately corrected to distillation mode regardless.
+        """
+        super().train(mode)              # student backbone + projectors: normal
+        if mode:
+            # Only apply when switching to train; eval() leaves teacher alone
+            # (teacher is never used during inference anyway).
+            self._apply_teacher_distill_mode()
+        return self
+
+    # ─────────────────────────────────────────────────────────────────────
     # Distillation loss components
     # ─────────────────────────────────────────────────────────────────────
 
@@ -222,7 +302,9 @@ class DistillationSegmentorV2(nn.Module):
             if s not in self._s_feats or s not in self._t_feats:
                 continue
             sf = self.projectors[f"s{s}"](self._s_feats[s])   # [N, C_t]  grad ON
-            tf = self._t_feats[s].detach()                      # [N, C_t]  grad OFF
+            # Cast teacher features to match student dtype (student may be fp16
+            # under AMP; teacher runs in fp32 via training-mode spconv path).
+            tf = self._t_feats[s].detach().to(sf.dtype)        # [N, C_t]  grad OFF
             if sf.shape[0] != tf.shape[0]:
                 continue
             total = total + (1.0 - F.cosine_similarity(sf, tf, dim=-1)).mean()
@@ -254,7 +336,8 @@ class DistillationSegmentorV2(nn.Module):
                 continue
 
             sf_raw = self._s_feats[s]          # [N, C_s]
-            tf_raw = self._t_feats[s].detach() # [N, C_t]
+            # Cast teacher to student dtype (see note in _pointwise_kd_loss)
+            tf_raw = self._t_feats[s].detach().to(sf_raw.dtype)  # [N, C_t]
 
             if sf_raw.shape[0] != tf_raw.shape[0]:
                 continue
@@ -282,22 +365,6 @@ class DistillationSegmentorV2(nn.Module):
         return total / max(n, 1)
 
     # ─────────────────────────────────────────────────────────────────────
-    # Training-mode override — locks teacher in eval permanently
-    # ─────────────────────────────────────────────────────────────────────
-
-    def train(self, mode: bool = True):
-        """Keep student/projectors in requested mode; teacher is always eval.
-
-        Without this override, the trainer's per-epoch `model.train()` call
-        recursively sets teacher_backbone to training=True, which forces
-        spconv to re-profile eval-mode CUDA kernels every epoch — and that
-        profiling fails on some GPU/spconv version combinations.
-        """
-        super().train(mode)
-        self.teacher_backbone.eval()   # always eval, regardless of caller
-        return self
-
-    # ─────────────────────────────────────────────────────────────────────
     # Forward pass
     # ─────────────────────────────────────────────────────────────────────
 
@@ -306,26 +373,37 @@ class DistillationSegmentorV2(nn.Module):
         self._s_feats.clear()
         self._t_feats.clear()
 
-        # ── Student forward ───────────────────────────────────────────────
-        point = self.backbone(Point(input_dict))            # populates _s_feats
-
-        # ── Teacher forward (no grad, eval BN/DropPath) ───────────────────
+        # ── Teacher forward FIRST ──────────────────────────────────────────
+        #
+        # ORDER MATTERS: teacher runs before student so that spconv's CUTLASS
+        # kernel profiling (first batch only) happens with maximum free GPU
+        # memory, before the student allocates its activations.
+        #
+        # DEEP CLONE: student's forward mutates the Point structure in-place
+        # (GridPooling replaces grid_coord, sparsify() attaches SparseConvTensor,
+        # etc.).  Without cloning, shared tensor references would be corrupted
+        # by the time the teacher accesses them.
+        #
+        # DISTILL MODE: _apply_teacher_distill_mode() is called here as a
+        # belt-and-suspenders guard in case anything (DDP, checkpoint reload,
+        # AMP hooks) reset teacher submodule flags between train() and forward().
         if self.training:
-            self.teacher_backbone.eval()
-            teacher_input = {k: v for k, v in input_dict.items()}
+            self._apply_teacher_distill_mode()
 
-            # spconv profiles CUDA kernels the first time a new (channels,
-            # kernel_size, dtype, training_flag) combination is seen.
-            # The student warms up training=True kernels; the teacher needs
-            # training=False (eval) kernels profiled separately.
-            # Running once WITHOUT no_grad lets spconv complete that profiling.
-            # All subsequent steps hit the cache and run under no_grad normally.
-            if not getattr(self, '_teacher_spconv_warmed', False):
-                self.teacher_backbone(Point(teacher_input))   # profiles eval kernels
-                self._teacher_spconv_warmed = True
+            teacher_input = {
+                k: v.detach().clone() if isinstance(v, torch.Tensor) else v
+                for k, v in input_dict.items()
+            }
 
             with torch.no_grad():
+                # spconv layers inside teacher_backbone are training=True
+                # (set by _apply_teacher_distill_mode), so they use the same
+                # training-mode CUTLASS kernels as the student — no new
+                # profiling required, no "can't find suitable algorithm" crash.
                 self.teacher_backbone(Point(teacher_input))   # populates _t_feats
+
+        # ── Student forward ────────────────────────────────────────────────
+        point = self.backbone(Point(input_dict))               # populates _s_feats
 
         # ── Unpooling (mirrors DefaultSegmentorV2 exactly) ────────────────
         if isinstance(point, Point):
@@ -338,11 +416,11 @@ class DistillationSegmentorV2(nn.Module):
                 point = parent
             feat = point.feat
         else:
-            feat = point
+            feat = point  # backbone returned a raw tensor (legacy path)
 
         seg_logits = self.seg_head(feat)
 
-        # ── Training: seg loss + KD losses ───────────────────────────────
+        # ── Training: seg loss + KD losses ────────────────────────────────
         if self.training:
             segment = input_dict.get("segment", None)
             if segment is None:
@@ -368,10 +446,12 @@ class DistillationSegmentorV2(nn.Module):
                 rel_kd   = rel_loss.detach(),
             )
 
+        # ── Eval with labels (SemSegEvaluator calls model with 'segment') ─
         elif "segment" in input_dict:
             loss = self.criteria(seg_logits, input_dict["segment"])
             return dict(loss=loss, seg_logits=seg_logits)
 
+        # ── Test / inference (no labels) ──────────────────────────────────
         else:
             return dict(seg_logits=seg_logits)
 
