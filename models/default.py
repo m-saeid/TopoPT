@@ -44,7 +44,7 @@ class DefaultSegmentor(nn.Module):
         else:
             return dict(seg_logits=seg_logits)
 
-
+'''
 @MODELS.register_module()
 class DistillationSegmentorV2(nn.Module):
     def __init__(
@@ -252,7 +252,7 @@ class DistillationSegmentorV2(nn.Module):
             return_dict["seg_logits"] = seg_logits
 
         return return_dict
-    
+'''    
 
 @MODELS.register_module()
 class DefaultSegmentorV2(nn.Module):
