@@ -287,6 +287,9 @@ class DistillationSegmentorV2(nn.Module):
         self._s_feats.clear()
         self._t_feats.clear()
 
+        # ── Student forward ───────────────────────────────────────────────
+        point = self.backbone(Point(input_dict))            # populates _s_feats
+
         # ── Teacher forward (no grad, eval BN) ────────────────────────────
         # Done first so teacher features are resident when we compute KD losses.
         # Teacher is always frozen; running it in eval mode prevents BN stat drift.
@@ -301,9 +304,6 @@ class DistillationSegmentorV2(nn.Module):
                 # Shallow copy: protects dict keys from teacher-side mutations
                 teacher_input = {k: v for k, v in input_dict.items()}
                 self.teacher_backbone(Point(teacher_input))
-
-        # ── Student forward ───────────────────────────────────────────────
-        point = self.backbone(Point(input_dict))            # populates _s_feats
 
         # ── Unpooling (mirrors DefaultSegmentorV2 exactly) ────────────────
         if isinstance(point, Point):
