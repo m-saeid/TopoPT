@@ -31,7 +31,7 @@ REGISTER DistillationSegmentorV2 by adding to models/__init__.py:
 
 _base_ = ["../_base_/default_runtime.py"]
 
-batch_size  = 8
+batch_size  = 4
 num_worker  = 6
 mix_prob    = 0.8
 empty_cache = False
