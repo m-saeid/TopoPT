@@ -1,3 +1,5 @@
+# configs\scannet\semseg-litept-small-v1m2.py
+
 _base_ = ["../_base_/default_runtime.py"]
 
 # misc custom setting
