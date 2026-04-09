@@ -42,7 +42,7 @@ save_path = "exp/scannet/semseg-litept-lw-c-kd"
 
 # ─── Teacher checkpoint ────────────────────────────────────────────────────────
 # Path to the trained baseline checkpoint (must exist before running this config).
-_teacher_ckpt = "exp/scannet/s1/litept-rerun/model/model_best.pth"
+_teacher_ckpt = "exp/scannet/semseg/litept-rerun/model/model_best.pth"
 
 model = dict(
     type="DistillationSegmentorV2",
