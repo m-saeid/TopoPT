@@ -95,10 +95,10 @@ class DistillationPointGroupV2(nn.Module):
         self,
         # ── Student ───────────────────────────────────────────────────────
         backbone,
-        backbone_out_channels=54,
         # ── Teacher ───────────────────────────────────────────────────────
         teacher_backbone,
         teacher_ckpt,
+        backbone_out_channels=54,
         # ── Distillation ──────────────────────────────────────────────────
         distill_stages=(3, 4),
         pointwise_weight=1.0,
