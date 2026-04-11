@@ -99,7 +99,7 @@ param_dicts = [dict(keyword="block", lr=0.001)]
 
 # ── dataset ───────────────────────────────────────────────────────────────────
 dataset_type = "ScanNet200Dataset"
-data_root    = "data/scannet200"
+data_root    = "data/scannet"   #200"
 
 data = dict(
     num_classes=num_classes,
