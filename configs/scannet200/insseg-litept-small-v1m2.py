@@ -1,3 +1,5 @@
+# configs\scannet200\insseg-litept-small-v1m2.py
+
 from datasets.preprocessing.scannet.meta_data.scannet200_constants import (
     CLASS_LABELS_200,
 )

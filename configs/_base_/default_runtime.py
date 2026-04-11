@@ -1,3 +1,5 @@
+# configs\_base_\default_runtime.py
+
 weight = None  # path to model weight
 resume = False  # whether to resume training process
 evaluate = True  # evaluate after each epoch training process
