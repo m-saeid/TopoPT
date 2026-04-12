@@ -1,3 +1,5 @@
+# configs\nuscenes\semseg-litept-small-v1m1.py
+
 _base_ = ["../_base_/default_runtime.py"]
 
 # misc custom setting
