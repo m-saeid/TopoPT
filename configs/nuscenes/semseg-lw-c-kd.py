@@ -19,7 +19,7 @@ CRITICAL: in_channels=4 for BOTH student and teacher (NuScenes uses coord+streng
 
 _base_ = ["../_base_/default_runtime.py"]
 
-batch_size  = 4
+batch_size  = 3
 num_worker  = 4
 mix_prob    = 0.8
 empty_cache = False

@@ -19,7 +19,7 @@ Differences vs configs/scannet/semseg-litept-lw-c.py:
 
 _base_ = ["../_base_/default_runtime.py"]
 
-batch_size  = 4
+batch_size  = 3
 num_worker  = 4
 mix_prob    = 0.8
 empty_cache = False
