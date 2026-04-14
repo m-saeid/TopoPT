@@ -8,11 +8,11 @@ test_only = False  # test process
 seed = None  # train process will init a random seed and record
 save_path = "exp/default"
 num_worker = 4  # total worker in all gpu
-batch_size = 3  # total batch size in all gpu
+batch_size = 4 # 3  # total batch size in all gpu
 batch_size_val = None  # auto adapt to bs 1 for each gpu
 batch_size_test = None  # auto adapt to bs 1 for each gpu
-epoch = 50 # 100  # total epoch, data loop = epoch // eval_epoch
-eval_epoch = 50 # 100  # sche total eval & checkpoint epoch
+epoch = 1200 # 100  # total epoch, data loop = epoch // eval_epoch
+eval_epoch = 1200 # 100  # sche total eval & checkpoint epoch
 clip_grad = None  # disable with None, enable with a float
 
 sync_bn = False
@@ -36,7 +36,7 @@ hooks = [
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
     dict(type="SemSegEvaluator"),
-    dict(type="CheckpointSaver", save_freq=50),
+    dict(type="CheckpointSaver", save_freq=400),
     dict(type="PreciseEvaluator", test_last=False),
 ]
 
