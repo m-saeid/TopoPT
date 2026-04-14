@@ -1,5 +1,5 @@
 """
-configs/scannet/semseg-litept-lw-c-kd-2.py
+configs/scannet/semseg-litept-lw-c-kd.py
 =========================================
 LitePT-LW-C + Stage-wise Relational Feature Distillation (SRFD)
 
@@ -38,7 +38,7 @@ empty_cache = False
 enable_amp  = True
 clip_grad   = 1.0
 
-save_path = "exp/scannet/semseg-litept-lw-c-kd-2"
+save_path = "exp/scannet/semseg-litept-lw-c-kd"
 
 # ─── Teacher checkpoint ────────────────────────────────────────────────────────
 # Path to the trained baseline checkpoint (must exist before running this config).
