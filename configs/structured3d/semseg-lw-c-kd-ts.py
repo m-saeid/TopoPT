@@ -1,9 +1,9 @@
 """
-configs/structured3d/semseg-lw-c-kd.py
+configs/structured3d/semseg-lw-c-kd-ts.py
 ===============================================
 LitePT-LW-C + SRFD KD — Structured3D Semantic Segmentation
 
-bash scripts/train.sh -g 1 -d structured3d -c semseg-lw-c-kd -n semseg-lw-c-kd
+bash scripts/train.sh -g 1 -d structured3d -c semseg-lw-c-kd-ts -n semseg-lw-c-kd-ts
      ### -w exp/structured3d/semseg-lw-c/model/model_best.pth
 
 STUDENT : lw-c backbone + DefaultSegmentorV2
