@@ -3,6 +3,8 @@ configs/scannet/insseg-litept-lw-c-kd.py
 ==========================================
 LitePT-LW-C  Instance Segmentation + Stage-wise Relational Feature Distillation
 
+bash scripts/train.sh -g 1 -d scannet -c insseg-lw-c-kd-800epoch -n insseg-lw-c-kd-800epoch
+
 STUDENT:  lw-c backbone (5.84M params, ~12.95 GFLOPs)  +  PG-v1m2 task head
 TEACHER:  full LitePT backbone loaded from insseg-litept-small-v1m2 checkpoint
 
