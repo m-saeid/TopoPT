@@ -1,79 +1,77 @@
 """
-configs/scannet200/insseg-litept-lw-c-kd.py
-=============================================
-LitePT-LW-C  Instance Segmentation + SRFD KD — ScanNet200
+configs/scannet/insseg-lw-c-800epoch.py
+======================================
+LW-C  Instance Segmentation Baseline
 
-STUDENT : lw-c backbone (5.84M params, ~12.95 GFLOPs) + PG-v1m2 task head
-TEACHER : full LitePT backbone from insseg-litept-small-v1m2 (scannet200)
+Student backbone: lw-c (D+C reduced) — 5.84M backbone params, ~12.95 GFLOPs
+Task head:        PG-v1m2 (PointGroup with bias prediction + BFS clustering)
 
-Training loss:
-  L = L_seg  +  L_bias_L1  +  L_bias_cosine      (PG-v1m2 task losses)
-    + 1.0 × L_pointwise_kd                        (per-point cosine, stages 3+4)
-    + 2.0 × L_relational_kd  ← SRFD              (pairwise similarity, stages 3+4)
+Training objective (PG-v1m2 standard):
+  L = L_CE  +  L_bias_L1  +  L_bias_cosine
 
-Key differences vs configs/scannet/insseg-litept-lw-c-kd.py:
-  - num_classes          : 20  → 200
-  - segment_ignore_index : (-1,0,1) → (-1,0,2)
-  - dataset_type         : ScanNetDataset → ScanNet200Dataset
-  - data_root            : data/scannet  → data/scannet200
-  - teacher_ckpt         : scannet200 insseg teacher (not scannet)
-  - lr                   : 0.006/0.0006 → 0.01/0.001
+Architecture vs baseline insseg-litept-small-v1m2:
+  enc_channels : (36,72,144,252,504) → (36,54,108,180,360)   ← lw-c
+  enc_depths   : (2,2,2,6,2)         → (2,2,2,4,2)           ← lw-c
+  enc_num_head : (2,4,8,14,28)       → (2,3,6,10,20)         ← lw-c  head_dim=18 ✓
+  dec_channels : (72,72,144,252)     → (54,54,108,180)        ← lw-c
+  dec_num_head : (4,4,8,14)         → (3,3,6,10)             ← lw-c  head_dim=18 ✓
+  backbone_out_channels: 72 → 54
 
-PREREQUISITES:
-  1. models/distillation_pg.py in place and imported in models/__init__.py
-  2. Teacher checkpoint at:
-       exp/scannet200/insseg-litept-small-v1m2/model/model_best.pth
-  3. (Recommended) Step 4 scannet200 checkpoint at:
-       exp/scannet200/insseg-litept-lw-c/model/model_best.pth
-     Pass via -w flag to run_insseg_lw_c_kd_scannet200.sh for warm-start.
+Decoder: REAL decoder (dec_depths=(2,2,2,2)), required by PG-v1m2 for per-point features.
+Unlike semseg lw-c which used dec_depths=(0,0,0,0), insseg needs full U-Net features.
+
 """
-
-from datasets.preprocessing.scannet.meta_data.scannet200_constants import (
-    CLASS_LABELS_200,
-)
 
 _base_ = ["../_base_/default_runtime.py"]
 
 # ── misc ──────────────────────────────────────────────────────────────────────
-batch_size  = 4
+batch_size  = 4          # RTX 3090 safe with full decoder; raise to 6 if memory allows
 num_worker  = 4
 mix_prob    = 0.8
 empty_cache = False
 enable_amp  = True
 evaluate    = True
 
-save_path = "exp/scannet200/insseg-litept-lw-c-kd"
-
-# ── Teacher checkpoint ─────────────────────────────────────────────────────────
-# Must be the scannet200 insseg teacher, NOT the scannet one.
-_teacher_ckpt = "exp/scannet200/insseg-litept-small-v1m2/model/model_best.pth"
+save_path = "exp/scannet/insseg-lw-c-800epoch"
 
 # ── class names / ignore indices ──────────────────────────────────────────────
-class_names          = CLASS_LABELS_200
-num_classes          = 200
-segment_ignore_index = (-1, 0, 2)   # scannet200: ignore wall(0) and floor(2)
+class_names = [
+    "wall", "floor", "cabinet", "bed", "chair", "sofa", "table",
+    "door", "window", "bookshelf", "picture", "counter", "desk",
+    "curtain", "refridgerator", "shower curtain", "toilet", "sink",
+    "bathtub", "otherfurniture",
+]
+num_classes          = 20
+segment_ignore_index = (-1, 0, 1)
 
 # ── model ─────────────────────────────────────────────────────────────────────
 model = dict(
-    type="DistillationPointGroupV2",
-
-    # ── Student backbone (lw-c) ───────────────────────────────────────────
-    backbone_out_channels=54,
+    type="PG-v1m2",
+    backbone_out_channels=54,           # enc_channels[1] for lw-c
+    semantic_num_classes=num_classes,
+    semantic_ignore_index=-1,
+    segment_ignore_index=segment_ignore_index,
+    instance_ignore_index=-1,
+    cluster_thresh=1.5,
+    cluster_closed_points=600,
+    cluster_propose_points=200,
+    cluster_min_points=50,
     backbone=dict(
         type="LitePT",
         in_channels=6,
         order=("z", "z-trans", "hilbert", "hilbert-trans"),
         stride=(2, 2, 2, 2),
-        enc_depths=(2, 2, 2, 4, 2),
-        enc_channels=(36, 54, 108, 180, 360),
-        enc_num_head=(2, 3, 6, 10, 20),
+        enc_depths=(2, 2, 2, 4, 2),              # lw-c: stage3 = 4 blocks
+        enc_channels=(36, 54, 108, 180, 360),    # lw-c: 18×(2,3,6,10,20)
+        enc_num_head=(2, 3, 6, 10, 20),          # head_dim=18 ✓
         enc_patch_size=(1024, 1024, 1024, 1024, 1024),
         enc_conv=(True, True, True, False, False),
         enc_attn=(False, False, False, True, True),
         enc_rope_freq=(100.0, 100.0, 100.0, 100.0, 100.0),
+        # ── REAL decoder (unlike semseg enc_mode) ────────────────────────
         dec_depths=(2, 2, 2, 2),
-        dec_channels=(54, 54, 108, 180),
-        dec_num_head=(3, 3, 6, 10),
+        dec_channels=(54, 54, 108, 180),         # lw-c scaled
+        dec_num_head=(3, 3, 6, 10),              # head_dim=18 ✓
         dec_patch_size=(1024, 1024, 1024, 1024),
         dec_conv=(True, True, True, False),
         dec_attn=(False, False, False, True),
@@ -86,58 +84,8 @@ model = dict(
         drop_path=0.3,
         shuffle_orders=True,
         pre_norm=True,
-        enc_mode=False,
+        enc_mode=False,                          # MUST be False for insseg
     ),
-
-    # ── Teacher backbone (full LitePT, encoder only) ──────────────────────
-    teacher_backbone=dict(
-        type="LitePT",
-        in_channels=6,
-        order=("z", "z-trans", "hilbert", "hilbert-trans"),
-        stride=(2, 2, 2, 2),
-        enc_depths=(2, 2, 2, 6, 2),
-        enc_channels=(36, 72, 144, 252, 504),
-        enc_num_head=(2, 4, 8, 14, 28),
-        enc_patch_size=(1024, 1024, 1024, 1024, 1024),
-        enc_conv=(True, True, True, False, False),
-        enc_attn=(False, False, False, True, True),
-        enc_rope_freq=(100.0, 100.0, 100.0, 100.0, 100.0),
-        dec_depths=(0, 0, 0, 0),
-        dec_channels=(72, 72, 144, 252),
-        dec_num_head=(4, 4, 8, 14),
-        dec_patch_size=(1024, 1024, 1024, 1024),
-        dec_conv=(False, False, False, False),
-        dec_attn=(False, False, False, False),
-        dec_rope_freq=(100.0, 100.0, 100.0, 100.0),
-        mlp_ratio=4,
-        qkv_bias=True,
-        qk_scale=None,
-        attn_drop=0.0,
-        proj_drop=0.0,
-        drop_path=0.3,
-        shuffle_orders=True,
-        pre_norm=True,
-        key_prefix="teacher_",
-        enc_mode=True,
-    ),
-
-    teacher_ckpt=_teacher_ckpt,
-
-    # ── Distillation ──────────────────────────────────────────────────────
-    distill_stages=(3, 4),
-    pointwise_weight=1.0,
-    relational_weight=2.0,
-    relational_n_sample=512,
-
-    # ── PG-v1m2 instance segmentation settings ────────────────────────────
-    semantic_num_classes=num_classes,
-    semantic_ignore_index=-1,
-    segment_ignore_index=segment_ignore_index,
-    instance_ignore_index=-1,
-    cluster_thresh=1.5,
-    cluster_closed_points=600,
-    cluster_propose_points=200,
-    cluster_min_points=50,
     criteria=[
         dict(type="CrossEntropyLoss", loss_weight=1.0, ignore_index=-1),
         dict(type="LovaszLoss", mode="multiclass", loss_weight=1.0, ignore_index=-1),
@@ -146,21 +94,21 @@ model = dict(
 
 # ── scheduler ─────────────────────────────────────────────────────────────────
 epoch      = 800
-eval_epoch = 100
-optimizer  = dict(type="AdamW", lr=0.01, weight_decay=0.05)
+eval_epoch = 800
+optimizer  = dict(type="AdamW", lr=0.006, weight_decay=0.05)
 scheduler  = dict(
     type="OneCycleLR",
-    max_lr=[0.01, 0.001],
+    max_lr=[0.006, 0.0006],
     pct_start=0.05,
     anneal_strategy="cos",
     div_factor=10.0,
     final_div_factor=1000.0,
 )
-param_dicts = [dict(keyword="block", lr=0.001)]
+param_dicts = [dict(keyword="block", lr=0.0006)]
 
 # ── dataset ───────────────────────────────────────────────────────────────────
-dataset_type = "ScanNet200Dataset"
-data_root    = "data/scannet"   #200"
+dataset_type = "ScanNetDataset"
+data_root    = "data/scannet"
 
 data = dict(
     num_classes=num_classes,
@@ -231,6 +179,11 @@ data = dict(
 )
 
 # ── hooks ─────────────────────────────────────────────────────────────────────
+# CheckpointLoader loads from save_path by default.
+# To warm-start from semseg KD weights, pass the path via --resume or set
+# the checkpoint_path in CheckpointLoader. The loader uses strict=False so
+# the missing seg_head / bias_head keys are silently ignored and randomly
+# initialised, which is correct.
 hooks = [
     dict(type="CheckpointLoader", keywords="module.", replacement="module."),
     dict(type="IterationTimer", warmup_iter=2),

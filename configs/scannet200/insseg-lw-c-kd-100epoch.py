@@ -1,27 +1,28 @@
 """
-configs/scannet/insseg-litept-lw-c-kd.py
-==========================================
-LitePT-LW-C  Instance Segmentation + Stage-wise Relational Feature Distillation
+configs/scannet200/insseg-lw-c-kd-100epoch.py
+=============================================
+LW-C  Instance Segmentation + SRFD KD — ScanNet200
 
-STUDENT:  lw-c backbone (5.84M params, ~12.95 GFLOPs)  +  PG-v1m2 task head
-TEACHER:  full LitePT backbone loaded from insseg-litept-small-v1m2 checkpoint
+STUDENT : lw-c backbone (5.84M params, ~12.95 GFLOPs) + PG-v1m2 task head
+TEACHER : full LitePT backbone from insseg-litept-small-v1m2 (scannet200)
 
 Training loss:
   L = L_seg  +  L_bias_L1  +  L_bias_cosine      (PG-v1m2 task losses)
     + 1.0 × L_pointwise_kd                        (per-point cosine, stages 3+4)
     + 2.0 × L_relational_kd  ← SRFD              (pairwise similarity, stages 3+4)
 
-PREREQUISITES:
-  1. Teacher checkpoint (full LitePT insseg weights) at:
-       exp/scannet/insseg-litept-small-v1m2/model/model_best.pth
-     Download from the official LitePT repo or use your own trained baseline.
-
-  2. DistillationPointGroupV2 registered in models/__init__.py:
-       from models.distillation_pg import DistillationPointGroupV2
-
-GPU: RTX 3090 (24 GB).  Expected runtime: ~22-26h (teacher forward ~15% overhead).
-Expected AP: competitive with / exceeding baseline at 49% fewer GFLOPs.
+Key differences vs configs/scannet/insseg-lw-c-kd.py:
+  - num_classes          : 20  → 200
+  - segment_ignore_index : (-1,0,1) → (-1,0,2)
+  - dataset_type         : ScanNetDataset → ScanNet200Dataset
+  - data_root            : data/scannet  → data/scannet200
+  - teacher_ckpt         : scannet200 insseg teacher (not scannet)
+  - lr                   : 0.006/0.0006 → 0.01/0.001
 """
+
+from datasets.preprocessing.scannet.meta_data.scannet200_constants import (
+    CLASS_LABELS_200,
+)
 
 _base_ = ["../_base_/default_runtime.py"]
 
@@ -33,26 +34,22 @@ empty_cache = False
 enable_amp  = True
 evaluate    = True
 
-save_path = "exp/scannet/insseg-litept-lw-c-kd"
+save_path = "exp/scannet200/insseg-lw-c-kd-100epoch"
 
 # ── Teacher checkpoint ─────────────────────────────────────────────────────────
-_teacher_ckpt = "exp/scannet/insseg-litept-small-v1m2/model/model_best.pth"
+# Must be the scannet200 insseg teacher, NOT the scannet one.
+_teacher_ckpt = "exp/scannet200/insseg-litept-small-v1m2/model/model_best.pth"
 
 # ── class names / ignore indices ──────────────────────────────────────────────
-class_names = [
-    "wall", "floor", "cabinet", "bed", "chair", "sofa", "table",
-    "door", "window", "bookshelf", "picture", "counter", "desk",
-    "curtain", "refridgerator", "shower curtain", "toilet", "sink",
-    "bathtub", "otherfurniture",
-]
-num_classes          = 20
-segment_ignore_index = (-1, 0, 1)
+class_names          = CLASS_LABELS_200
+num_classes          = 200
+segment_ignore_index = (-1, 0, 2)   # scannet200: ignore wall(0) and floor(2)
 
 # ── model ─────────────────────────────────────────────────────────────────────
 model = dict(
     type="DistillationPointGroupV2",
 
-    # ── Student backbone (lw-c — identical to insseg-litept-lw-c.py) ──────
+    # ── Student backbone (lw-c) ───────────────────────────────────────────
     backbone_out_channels=54,
     backbone=dict(
         type="LitePT",
@@ -81,7 +78,7 @@ model = dict(
         drop_path=0.3,
         shuffle_orders=True,
         pre_norm=True,
-        enc_mode=False,                    # MUST be False: decoder needed by PG
+        enc_mode=False,
     ),
 
     # ── Teacher backbone (full LitePT, encoder only) ──────────────────────
@@ -97,7 +94,6 @@ model = dict(
         enc_conv=(True, True, True, False, False),
         enc_attn=(False, False, False, True, True),
         enc_rope_freq=(100.0, 100.0, 100.0, 100.0, 100.0),
-        # Decoder params irrelevant (enc_mode=True): keep for config consistency
         dec_depths=(0, 0, 0, 0),
         dec_channels=(72, 72, 144, 252),
         dec_num_head=(4, 4, 8, 14),
@@ -113,8 +109,8 @@ model = dict(
         drop_path=0.3,
         shuffle_orders=True,
         pre_norm=True,
-        key_prefix="teacher_",             # avoids spconv cache collision
-        enc_mode=True,                     # encoder only → saves GPU memory
+        key_prefix="teacher_",
+        enc_mode=True,
     ),
 
     teacher_ckpt=_teacher_ckpt,
@@ -141,22 +137,22 @@ model = dict(
 )
 
 # ── scheduler ─────────────────────────────────────────────────────────────────
-epoch      = 800
+epoch      = 100
 eval_epoch = 100
-optimizer  = dict(type="AdamW", lr=0.006, weight_decay=0.05)
+optimizer  = dict(type="AdamW", lr=0.01, weight_decay=0.05)
 scheduler  = dict(
     type="OneCycleLR",
-    max_lr=[0.006, 0.0006],
+    max_lr=[0.01, 0.001],
     pct_start=0.05,
     anneal_strategy="cos",
     div_factor=10.0,
     final_div_factor=1000.0,
 )
-param_dicts = [dict(keyword="block", lr=0.0006)]
+param_dicts = [dict(keyword="block", lr=0.001)]
 
-# ── dataset (identical to insseg-litept-lw-c.py) ──────────────────────────────
-dataset_type = "ScanNetDataset"
-data_root    = "data/scannet"
+# ── dataset ───────────────────────────────────────────────────────────────────
+dataset_type = "ScanNet200Dataset"
+data_root    = "data/scannet"   #200"
 
 data = dict(
     num_classes=num_classes,

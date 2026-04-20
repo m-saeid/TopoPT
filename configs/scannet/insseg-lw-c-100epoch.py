@@ -1,11 +1,10 @@
 """
-configs/scannet/insseg-litept-lw-c.py
+configs/scannet/insseg-lw-c-100epoch.py
 ======================================
-LitePT-LW-C  Instance Segmentation Baseline
+LW-C  Instance Segmentation Baseline
 
 Student backbone: lw-c (D+C reduced) — 5.84M backbone params, ~12.95 GFLOPs
 Task head:        PG-v1m2 (PointGroup with bias prediction + BFS clustering)
-Backbone init:    Transfer from semseg-litept-lw-c-kd-2 checkpoint.
 
 Training objective (PG-v1m2 standard):
   L = L_CE  +  L_bias_L1  +  L_bias_cosine
@@ -20,15 +19,6 @@ Architecture vs baseline insseg-litept-small-v1m2:
 
 Decoder: REAL decoder (dec_depths=(2,2,2,2)), required by PG-v1m2 for per-point features.
 Unlike semseg lw-c which used dec_depths=(0,0,0,0), insseg needs full U-Net features.
-
-GPU: RTX 3090 (24 GB).  Expected runtime: ~18-22h.
-Expected mIoU: competitive with baseline at ~49% fewer GFLOPs.
-
-PREREQUISITE:
-  Backbone pretrained weights at:
-    exp/scannet/semseg-litept-lw-c-kd-2/model/model_best.pth
-  The CheckpointLoader hook will strip the seg_head keys automatically
-  (strict=False is the default in the codebase's CheckpointLoader).
 """
 
 _base_ = ["../_base_/default_runtime.py"]
@@ -41,7 +31,7 @@ empty_cache = False
 enable_amp  = True
 evaluate    = True
 
-save_path = "exp/scannet/insseg-litept-lw-c"
+save_path = "exp/scannet/insseg-lw-c-100epoch"
 
 # ── class names / ignore indices ──────────────────────────────────────────────
 class_names = [
@@ -102,7 +92,7 @@ model = dict(
 )
 
 # ── scheduler ─────────────────────────────────────────────────────────────────
-epoch      = 800
+epoch      = 100
 eval_epoch = 100
 optimizer  = dict(type="AdamW", lr=0.006, weight_decay=0.05)
 scheduler  = dict(

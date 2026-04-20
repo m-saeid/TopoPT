@@ -1,7 +1,7 @@
 """
-configs/scannet200/insseg-litept-lw-c-kd.py
+configs/scannet200/insseg-lw-c-kd-800epoch.py
 =============================================
-LitePT-LW-C  Instance Segmentation + SRFD KD — ScanNet200
+LW-C  Instance Segmentation + SRFD KD — ScanNet200
 
 bash scripts/train.sh -g 1 -d scannet200 -c insseg-lw-c-kd-800epoch -n insseg-lw-c-kd-800epoch
 
@@ -13,21 +13,13 @@ Training loss:
     + 1.0 × L_pointwise_kd                        (per-point cosine, stages 3+4)
     + 2.0 × L_relational_kd  ← SRFD              (pairwise similarity, stages 3+4)
 
-Key differences vs configs/scannet/insseg-litept-lw-c-kd.py:
+Key differences vs configs/scannet/insseg-lw-c-kd.py:
   - num_classes          : 20  → 200
   - segment_ignore_index : (-1,0,1) → (-1,0,2)
   - dataset_type         : ScanNetDataset → ScanNet200Dataset
   - data_root            : data/scannet  → data/scannet200
   - teacher_ckpt         : scannet200 insseg teacher (not scannet)
   - lr                   : 0.006/0.0006 → 0.01/0.001
-
-PREREQUISITES:
-  1. models/distillation_pg.py in place and imported in models/__init__.py
-  2. Teacher checkpoint at:
-       exp/scannet200/insseg-litept-small-v1m2/model/model_best.pth
-  3. (Recommended) Step 4 scannet200 checkpoint at:
-       exp/scannet200/insseg-litept-lw-c/model/model_best.pth
-     Pass via -w flag to run_insseg_lw_c_kd_scannet200.sh for warm-start.
 """
 
 from datasets.preprocessing.scannet.meta_data.scannet200_constants import (
@@ -44,7 +36,7 @@ empty_cache = False
 enable_amp  = True
 evaluate    = True
 
-save_path = "exp/scannet200/insseg-litept-lw-c-kd"
+save_path = "exp/scannet200/insseg-lw-c-kd-800epoch"
 
 # ── Teacher checkpoint ─────────────────────────────────────────────────────────
 # Must be the scannet200 insseg teacher, NOT the scannet one.

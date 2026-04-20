@@ -1,7 +1,7 @@
 """
-configs/scannet/semseg-litept-lw-c.py
+configs/scannet/semseg-lw-c-1200epoch.py
 ======================================
-LitePT-LW-C  DEPTH + CHANNEL COMBINED  [Strategy-1  Row S4]
+LW-C  DEPTH + CHANNEL COMBINED  [Strategy-1  Row S4]
 
 Two changes vs S0 baseline:
   enc_depths   stage 3:  6 → 4
@@ -32,14 +32,14 @@ Expected mIoU: ~71.5–73.5%  (2–3% drop expected; channel reduction dominates
 
 _base_ = ["../_base_/default_runtime.py"]
 
-batch_size  = 12
-num_worker  = 24
+batch_size  = 4
+num_worker  = 4
 mix_prob    = 0.8
 empty_cache = False
 enable_amp  = True
 clip_grad   = 1.0
 
-save_path = "exp/scannet/semseg-litept-lw-c"
+save_path = "exp/scannet/semseg-lw-c-1200epoch"
 
 model = dict(
     type="DefaultSegmentorV2",
@@ -81,7 +81,7 @@ model = dict(
 )
 
 epoch      = 1200
-eval_epoch = 100
+eval_epoch = 1200
 optimizer  = dict(type="AdamW", lr=0.006, weight_decay=0.05)
 scheduler  = dict(
     type="OneCycleLR",
@@ -223,6 +223,6 @@ hooks = [
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
     dict(type="SemSegEvaluator"),
-    dict(type="CheckpointSaver", save_freq=3),
+    dict(type="CheckpointSaver", save_freq=None),
     dict(type="PreciseEvaluator", test_last=False),
 ]

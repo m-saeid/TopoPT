@@ -1,10 +1,10 @@
 """
-configs/scannet/semseg-litept-lw-c-kd.py
+configs/scannet/semseg-lw-c-kd-100epoch.py
 =========================================
-LitePT-LW-C + Stage-wise Relational Feature Distillation (SRFD)
+LW-C + Stage-wise Relational Feature Distillation (SRFD)
 
 STUDENT:  lw-c (D+C reduced) — 5.84M params, 12.95 GFLOPs, 74.95% test mIoU
-TEACHER:  full LitePT rerun  — 12.71M params, 25.42 GFLOPs, 75.27% test mIoU
+TEACHER:  full LitePT  — 12.71M params, 25.42 GFLOPs, 75.5% test mIoU (paper result)
 
 EXPECTED: lw-c + KD/SRFD → 75.2–75.5% test mIoU at 12.95 GFLOPs
   → PARETO IMPROVEMENT: beats the full 25.42 GFLOPs baseline at 49% fewer FLOPs.
@@ -17,16 +17,6 @@ Training loss:
 Distillation stages: 3 and 4 only (the attention stages, where lw-c differs most
 from baseline: C=180 vs 252, C=360 vs 504, and 4 blocks vs 6 blocks).
 Stages 0-2 are conv-only in both models and nearly identical → no KD needed there.
-
-GPU: RTX 3090 (24 GB).  Expected runtime: ~20-22h (same as plain lw-c).
-The teacher forward is grad-free (torch.no_grad), so overhead is minimal (~15%).
-
-PREREQUISITE: teacher checkpoint must exist at:
-  exp/scannet/s1/litept-rerun/model/model_best.pth
-
-REGISTER DistillationSegmentorV2 by adding to models/__init__.py:
-  from models.distillation import DistillationSegmentorV2
-(or wherever the model registry import happens in your codebase)
 """
 
 _base_ = ["../_base_/default_runtime.py"]
@@ -38,7 +28,7 @@ empty_cache = False
 enable_amp  = True
 clip_grad   = 1.0
 
-save_path = "exp/scannet/semseg-litept-lw-c-kd"
+save_path = "exp/scannet/semseg-lw-c-kd-100epoch"
 
 # ─── Teacher checkpoint ────────────────────────────────────────────────────────
 # Path to the trained baseline checkpoint (must exist before running this config).
@@ -47,7 +37,7 @@ _teacher_ckpt = "exp/scannet/semseg-litept-small-v1m1/model/model_best.pth"
 model = dict(
     type="DistillationSegmentorV2",
 
-    # ── Student architecture (lw-c — same as semseg-litept-lw-c.py) ───────────
+    # ── Student architecture (lw-c — same as semseg-lw-c.py) ───────────
     num_classes=20,
     backbone_out_channels=54,           # = enc_channels[1] for lw-c = 54
     backbone=dict(
@@ -80,7 +70,7 @@ model = dict(
         enc_mode=False,
     ),
 
-    # ── Teacher architecture (full LitePT baseline — semseg-litept-rerun) ─────
+    # ── Teacher architecture (full LitePT baseline) ─────
     teacher_backbone=dict(
         type="LitePT",
         in_channels=6,
@@ -262,6 +252,6 @@ hooks = [
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
     dict(type="SemSegEvaluator"),
-    dict(type="CheckpointSaver", save_freq=25),
+    dict(type="CheckpointSaver", save_freq=None),
     dict(type="PreciseEvaluator", test_last=False),
 ]

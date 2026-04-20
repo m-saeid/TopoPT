@@ -1,7 +1,7 @@
 """
-configs/scannet/insseg-litept-lw-c-kd.py
+configs/scannet/insseg-lw-c-kd-800epoch.py
 ==========================================
-LitePT-LW-C  Instance Segmentation + Stage-wise Relational Feature Distillation
+LW-C  Instance Segmentation + Stage-wise Relational Feature Distillation
 
 bash scripts/train.sh -g 1 -d scannet -c insseg-lw-c-kd-800epoch -n insseg-lw-c-kd-800epoch
 
@@ -35,7 +35,7 @@ empty_cache = False
 enable_amp  = True
 evaluate    = True
 
-save_path = "exp/scannet/insseg-litept-lw-c-kd"
+save_path = "exp/scannet/insseg-lw-c-kd-800epoch"
 
 # ── Teacher checkpoint ─────────────────────────────────────────────────────────
 _teacher_ckpt = "exp/scannet/insseg-litept-small-v1m2/model/model_best.pth"
@@ -54,7 +54,7 @@ segment_ignore_index = (-1, 0, 1)
 model = dict(
     type="DistillationPointGroupV2",
 
-    # ── Student backbone (lw-c — identical to insseg-litept-lw-c.py) ──────
+    # ── Student backbone (lw-c — identical to insseg-lw-c.py) ──────
     backbone_out_channels=54,
     backbone=dict(
         type="LitePT",
