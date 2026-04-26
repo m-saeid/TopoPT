@@ -93,7 +93,8 @@ class TesterBase:
             batch_size=self.cfg.batch_size_test_per_gpu,
             shuffle=False,
             num_workers=self.cfg.batch_size_test_per_gpu,
-            pin_memory=True,
+            # pin_memory=True,
+            pin_memory=False,   # ← was True; pin_memory accumulates for large scenes
             sampler=test_sampler,
             collate_fn=self.__class__.collate_fn,
         )
@@ -297,6 +298,12 @@ class SemSegTester(TesterBase):
                     m_iou=m_iou,
                 )
             )
+            
+            # ── Explicit cleanup to prevent CPU RAM accumulation ──────────
+            del fragment_list, data_dict, pred, segment
+            if idx % 50 == 0:
+                import gc; gc.collect()
+            # ─────────────────────────────────────────────────────────────
 
         logger.info("Syncing ...")
         comm.synchronize()
@@ -470,7 +477,8 @@ class TesterBase_Assemble:
             batch_size=self.cfg.batch_size_test_per_gpu,
             shuffle=False,
             num_workers=self.cfg.batch_size_test_per_gpu,
-            pin_memory=True,
+            # pin_memory=True,
+            pin_memory=False,   # ← was True; pin_memory accumulates for large scenes
             sampler=test_sampler,
             collate_fn=self.__class__.collate_fn,
         )
@@ -680,6 +688,12 @@ class SemSegTester_Assemble(TesterBase_Assemble):
                     m_iou=m_iou,
                 )
             )
+
+            # ── Explicit cleanup to prevent CPU RAM accumulation ──────────
+            del fragment_list, data_dict, pred, segment
+            if idx % 50 == 0:
+                import gc; gc.collect()
+            # ─────────────────────────────────────────────────────────────
 
         logger.info("Syncing ...")
         comm.synchronize()
@@ -945,6 +959,13 @@ class DINOSemSegTester(TesterBase):
                     m_iou=m_iou,
                 )
             )
+
+            # ── Explicit cleanup to prevent CPU RAM accumulation ──────────
+            del fragment_list, data_dict, pred, segment
+            del dino_coord, dino_feat, dino_offset
+            if idx % 50 == 0:
+                import gc; gc.collect()
+            # ─────────────────────────────────────────────────────────────
 
         logger.info("Syncing ...")
         comm.synchronize()
