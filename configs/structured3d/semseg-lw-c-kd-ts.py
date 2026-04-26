@@ -20,7 +20,7 @@ _base_ = ["../_base_/default_runtime.py"]
 batch_size  = 3
 num_worker  = 4
 mix_prob    = 0.8
-empty_cache = False
+empty_cache = True # False
 enable_amp  = True
 clip_grad   = 1.0
 
