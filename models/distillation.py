@@ -34,11 +34,6 @@ Why this will work:
     quality AND structural consistency.
   - Expected lw-c+SRFD: 75.2–75.5% (matching/beating baseline at 49% fewer GFLOPs).
 
-How to use:
-  Drop-in replacement for DefaultSegmentorV2. Set type="DistillationSegmentorV2"
-  and add teacher_backbone + teacher_ckpt. All other params are identical.
-  At inference the model is identical to DefaultSegmentorV2 — teacher is absent.
-
 ─────────────────────────────────────────────────────────────────────────────────
 SPCONV CUTLASS COMPATIBILITY NOTE
 ─────────────────────────────────────────────────────────────────────────────────
@@ -89,7 +84,7 @@ class DistillationSegmentorV2(nn.Module):
 
     def __init__(
         self,
-        # ── Student (same signature as DefaultSegmentorV2) ────────────────
+        # ── Student ───────────────────────────────────────────────────────
         num_classes,
         backbone_out_channels,
         backbone,               # config dict for student (e.g. lw-c)
