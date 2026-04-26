@@ -18,8 +18,8 @@ clip_grad = None  # disable with None, enable with a float
 sync_bn = False
 enable_amp = True # was False
 amp_dtype = "float16"
-empty_cache = False
-empty_cache_per_epoch = False
+empty_cache = True # False
+empty_cache_per_epoch = True # False
 find_unused_parameters = False
 
 enable_wandb = True
