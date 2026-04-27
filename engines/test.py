@@ -348,7 +348,7 @@ class SemSegTester(TesterBase):
                     )
                 )
             logger.info("<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<")
-            if self.cfg.enable_wandb:
+            if self.cfg.enable_wandb and wandb.run is not None:
                 wandb.log(
                     {
                         "test/mIoU": mIoU,
@@ -739,7 +739,7 @@ class SemSegTester_Assemble(TesterBase_Assemble):
                 )
             logger.info("<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<")
 
-            if self.cfg.enable_wandb:
+            if self.cfg.enable_wandb and wandb.run is not None:
                 wandb.log(
                     {
                         "test/mIoU": mIoU,
