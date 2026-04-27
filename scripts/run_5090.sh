@@ -1,0 +1,5 @@
+# Structured3D    kd    teacher: LitePT-L
+bash scripts/train.sh -g 1 -d structured3d -c semseg-lw-c-kd-tl -n structured3d/semseg-lw-c-kd-tl
+
+# NuScenes        lw
+bash scripts/train.sh -g 1 -d nuscenes -c semseg-lw-c -n nuscenes/semseg-lw-c

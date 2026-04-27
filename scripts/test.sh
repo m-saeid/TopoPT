@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# test.sh
+# scripts/test.sh
 
 # Flags & Examples: 
 # Flag  Meaning Default
