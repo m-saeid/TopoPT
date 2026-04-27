@@ -7,8 +7,8 @@ bash scripts/train.sh -g 1 -d scannet200 -c insseg-lw-c-kd-100epoch -n scannet20
 # ScanNet200 insseg 100 epoch lw-c
 bash scripts/train.sh -g 1 -d scannet200 -c insseg-lw-c-100epoch -n scannet200/insseg-lw-c-100epoch
 
-
-
+# structured3d semseg 200 epoch : LW-C
+bash scripts/train.sh -g 1 -d structured3d -c semseg-lw-c -n structured3d/semseg-lw-c
 
 
 
