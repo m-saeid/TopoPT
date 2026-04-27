@@ -128,8 +128,8 @@ def parse_args() -> argparse.Namespace:
                         "keys that do not exist in the inference-time student model).")
     p.add_argument("--run-name", required=True,
                    help="WandB run name, e.g. 'scannet/lw-e-random'")
-    p.add_argument("--wandb-project", default="LitePT-Profiling",
-                   help="WandB project (default: LitePT-Profiling)")
+    p.add_argument("--wandb-project", default="Profiling",
+                   help="WandB project (default: Profiling)")
     p.add_argument("--wandb-key", default=None,
                    help="WandB API key. If None, uses current `wandb login` session.")
     p.add_argument("--extra-tags", default="",
