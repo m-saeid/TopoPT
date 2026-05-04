@@ -1,30 +1,47 @@
 """
-configs/scannet/semseg-litept-lw-a.py
+configs/scannet/semseg-litept-lw-e.py
 ======================================
-LitePT-LW-A  DEPTH REDUCTION ONLY  [Strategy-1  Row S1]
+LitePT-LW-E  ALL THREE REDUCTIONS COMBINED  [Strategy-1  Row S5★]
 
-Single change vs S0 baseline:
-  enc_depths  stage 3:  6 → 4   (remove 2 attention blocks)
+THREE changes vs S0 baseline:
+  1. enc_depths   stage 3: 6 → 4
+  2. enc_channels : (36,72,144,252,504) → (36,54,108,180,360) = 18×(2,3,6,10,20)
+  3. enc_patch_sz stages 3, 4: 1024 → 512
 
-Rationale:
-  Stage 3 (C=252, 6 blocks) has the highest block-count of any stage.
-  Blocks 5-6 yield diminishing residual-learning returns — the gradients
-  at those blocks are small once the earlier 4 blocks have converged.
-  Stage 3 is building intermediate structural features; the final semantic
-  representation lives in stage 4, which is untouched.
-  This is the lowest-risk, cheapest single reduction available.
+*** PointROPE CUDA kernel constraint ***
+  Requires head_dim % 6 == 0.  All channels are multiples of 18,
+  so head_dim = 18 at every stage (18 % 6 = 0 ✓).
 
-What this ablation isolates in the paper table:
-  S0 → S1  =  pure cost of depth reduction  (no channel, no patch change)
-  Expected: <0.3% mIoU drop  →  depth cut at stage 3 is essentially free.
-  If true: always apply this reduction as a baseline before comparing ideas.
+Channel design:
+  stage 0:  36 /  2 = head_dim 18  ✓
+  stage 1:  54 /  3 = head_dim 18  ✓
+  stage 2: 108 /  6 = head_dim 18  ✓
+  stage 3: 180 / 10 = head_dim 18  ✓
+  stage 4: 360 / 20 = head_dim 18  ✓
+
+backbone_out_channels = enc_channels[1] = 54
+dec_channels = (54, 54, 108, 180)     dec[s] out = enc_channels[s]
+dec_num_head = (3, 3, 6, 10)          head_dim = 18 ✓
+dec_patch_size = (1024, 1024, 1024, 512)  dec_patch[s] = enc_patch[s] for s=0..3
 
 Architecture delta vs S0:
-  enc_depths  : (2, 2, 2, 6→4, 2)     ← ONLY CHANGE
-  All other fields: identical to S0.
+  enc_depths     : (2,2,2,6→4,2)                     ← CHANGE
+  enc_channels   : (36,72,144,252,504)
+                 → (36,54,108,180,360)                ← CHANGE
+  enc_num_head   : (2,4,8,14,28) → (2,3,6,10,20)     ← adjusted
+  enc_patch_size : (1024,1024,1024,1024,1024)
+                 → (1024,1024,1024,512,512)           ← CHANGE
+  backbone_out_channels : 72 → 54
+  dec_channels   : (72,72,144,252) → (54,54,108,180)
+  dec_num_head   : (4,4,8,14)     → (3,3,6,10)
+  dec_patch_size : (1024,1024,1024,1024)
+                 → (1024,1024,1024,512)               ← updated to match enc
 
-FLOPs (profiler, n_input=60 000): ~20.6 GFLOPs  (~0.81× baseline)
-Expected mIoU:  ~74.2–75.2%   (drop <0.3%)
+GFLOPs (profiler, n_input=60 000): ~11.2 GFLOPs  (~0.44× baseline)
+Params: ~65% of S0  (use exact profiler count)
+Expected mIoU: ~71–73%  (2–3.5% below S0; accepted trade-off for efficiency study)
+
+★ This is the recommended lightweight backbone for all subsequent idea experiments.
 """
 
 _base_ = ["../_base_/default_runtime.py"]
@@ -36,28 +53,28 @@ empty_cache = False
 enable_amp  = True
 clip_grad   = 1.0
 
-save_path = "exp/scannet/semseg-litept-lw-a"
+save_path = "exp/scannet/semseg-litept-lw-e-100epoch"
 
 model = dict(
     type="DefaultSegmentorV2",
     num_classes=20,
-    backbone_out_channels=72,        # = enc_channels[1]  — unchanged
+    backbone_out_channels=54,        # = enc_channels[1] = 54
     backbone=dict(
         type="LitePT",
         in_channels=6,
         order=("z", "z-trans", "hilbert", "hilbert-trans"),
         stride=(2, 2, 2, 2),
-        enc_depths=(2, 2, 2, 4, 2),              # ← CHANGE: stage 3:  6 → 4
-        enc_channels=(36, 72, 144, 252, 504),    # unchanged
-        enc_num_head=(2, 4, 8, 14, 28),          # head_dim = 18 — unchanged
-        enc_patch_size=(1024, 1024, 1024, 1024, 1024),  # unchanged
+        enc_depths=(2, 2, 2, 4, 2),                  # ← CHANGE: stage 3: 6 → 4
+        enc_channels=(36, 54, 108, 180, 360),         # ← CHANGE: 18×(2,3,6,10,20)
+        enc_num_head=(2, 3, 6, 10, 20),               # head_dim = 18 at every stage ✓
+        enc_patch_size=(1024, 1024, 1024, 512, 512),  # ← CHANGE: stages 3,4 → 512
         enc_conv=(True, True, True, False, False),
         enc_attn=(False, False, False, True, True),
         enc_rope_freq=(100.0, 100.0, 100.0, 100.0, 100.0),
         dec_depths=(0, 0, 0, 0),
-        dec_channels=(72, 72, 144, 252),         # unchanged
-        dec_num_head=(4, 4, 8, 14),
-        dec_patch_size=(1024, 1024, 1024, 1024), # dec_patch[s] = enc_patch[s]
+        dec_channels=(54, 54, 108, 180),              # dec[s] out = enc_channels[s]
+        dec_num_head=(3, 3, 6, 10),                   # head_dim = 18 ✓
+        dec_patch_size=(1024, 1024, 1024, 512),       # dec_patch[s] = enc_patch[s]
         dec_conv=(False, False, False, False),
         dec_attn=(False, False, False, False),
         dec_rope_freq=(100.0, 100.0, 100.0, 100.0),

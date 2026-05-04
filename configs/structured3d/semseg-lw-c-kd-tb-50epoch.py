@@ -1,63 +1,97 @@
 """
-configs/scannet/semseg-litept-lw-c-kd.py
-=========================================
-LitePT-LW-C + Stage-wise Relational Feature Distillation (SRFD)
+configs/structured3d/semseg-lw-c-kd-tb-100epoch.py
+===============================================
+LitePT-LW-C + SRFD KD — Structured3D Semantic Segmentation
+Teacher: LitePT-Base (semseg-litept-base-v1m1)
+100-epoch fast-run variant (halved from the 200-epoch baseline).
 
-STUDENT:  lw-c (D+C reduced) — 5.84M params, 12.95 GFLOPs, 74.95% test mIoU
-TEACHER:  full LitePT rerun  — 12.71M params, 25.42 GFLOPs, 75.27% test mIoU
+bash scripts/train.sh -g 1 -d structured3d -c semseg-lw-c-kd-tb-100epoch \
+                      -n semseg-lw-c-kd-tb-100epoch
 
-EXPECTED: lw-c + KD/SRFD → 75.2–75.5% test mIoU at 12.95 GFLOPs
-  → PARETO IMPROVEMENT: beats the full 25.42 GFLOPs baseline at 49% fewer FLOPs.
+STUDENT : lw-c backbone + DistillationSegmentorV2
+TEACHER : LitePT-Base from exp/structured3d/semseg-litept-base-v1m1/model/model_best.pth
 
-Training loss:
-  L = L_CE + L_Lovász                       (segmentation)
-    + 1.0 × L_pointwise_kd                  (per-point cosine, stages 3+4)
-    + 2.0 × L_relational_kd  ← NOVEL SRFD  (pairwise similarity, stages 3+4)
+Training loss (unchanged):
+  L = L_CE + L_Lovász
+    + 1.0 × L_pointwise_kd   (per-point cosine, stages 3+4)
+    + 2.0 × L_relational_kd  (SRFD pairwise similarity, stages 3+4)
 
-Distillation stages: 3 and 4 only (the attention stages, where lw-c differs most
-from baseline: C=180 vs 252, C=360 vs 504, and 4 blocks vs 6 blocks).
-Stages 0-2 are conv-only in both models and nearly identical → no KD needed there.
+Differences vs semseg-lw-c-kd-tb-200epoch.py
+(MODEL ARCHITECTURE AND DISTILLATION WEIGHTS ARE UNCHANGED — only training
+ hyper-parameters are modified):
 
-GPU: RTX 3090 (24 GB).  Expected runtime: ~20-22h (same as plain lw-c).
-The teacher forward is grad-free (torch.no_grad), so overhead is minimal (~15%).
+  1. epoch            : 200  → 100
+       Rationale: time budget cut in half for a faster Structured3D run.
 
-PREREQUISITE: teacher checkpoint must exist at:
-  exp/scannet/s1/litept-rerun/model/model_best.pth
+  2. eval_epoch       : 200  → 50
+       Rationale: the 200-epoch config evaluated only at the final epoch.
+       With 100 epochs we begin validation at epoch 50 to monitor the second
+       half of training and catch the best checkpoint if it appears before the
+       final epoch.
 
-REGISTER DistillationSegmentorV2 by adding to models/__init__.py:
-  from models.distillation import DistillationSegmentorV2
-(or wherever the model registry import happens in your codebase)
+  3. optimizer lr     : 0.012 → 0.018  (×1.5)
+  4. scheduler max_lr : [0.012, 0.0012] → [0.018, 0.0018]  (×1.5)
+  5. param_dicts lr   : 0.0012 → 0.0018  (×1.5)
+       Rationale: halving training steps roughly halves the total gradient
+       signal.  The linear-scaling heuristic suggests √2 ≈ 1.41×; we apply
+       1.5× as a conservative round figure.
+       Base-teacher note: the capacity gap between lw-c student channels
+       (180/360) and Base teacher channels (216/432 at stages 3/4) is larger
+       than for the Small teacher (252/504 — Small channels are wider than
+       Base at stages 3–4).  The higher LR helps the student projectors
+       (φ_s : R^{student_ch} → R^{teacher_ch}) converge faster to a useful
+       projection, which is more important when the epoch budget is tight.
+       The backbone-block LR (0.0018) and head LR (0.018) maintain 1:10 ratio.
+
+  6. pct_start        : 0.05 → 0.10
+       Rationale: restores the original 10-epoch absolute warmup.
+       At pct_start=0.05 and 100 epochs the warmup would be only 5 epochs —
+       too short when a stronger Base teacher is emitting high-magnitude SRFD
+       relational gradients from the very first batch.  The longer warmup at
+       max_lr / div_factor = 0.0018 lets the student adapt before full LR
+       exposure.
+
+  7. save_freq        : None → None  (unchanged; saves every epoch)
+
+  8. save_path updated to reflect 100-epoch variant.
+
+No changes to:
+  - Student/teacher model architecture (backbone channels, depths, heads, etc.)
+  - Distillation stages, pointwise_weight, relational_weight, relational_n_sample
+  - teacher_ckpt path
+  - Data pipeline / augmentation
+  - Weight decay, div_factor, final_div_factor, mix_prob, clip_grad, empty_cache
 """
 
 _base_ = ["../_base_/default_runtime.py"]
 
-batch_size  = 4 # 12
-num_worker  = 4 # 8
+batch_size  = 3
+num_worker  = 4
 mix_prob    = 0.8
 empty_cache = False
 enable_amp  = True
 clip_grad   = 1.0
 
-save_path = "exp/scannet/semseg-litept-lw-c-kd"
+# [CHANGED 1] save_path updated to reflect the 100-epoch / Base-teacher variant.
+save_path = "exp/structured3d/semseg-lw-c-kd-tb-50epoch"
 
-# ─── Teacher checkpoint ────────────────────────────────────────────────────────
-# Path to the trained baseline checkpoint (must exist before running this config).
-_teacher_ckpt = "exp/scannet/semseg/litept-rerun/model/model_best.pth"
+_teacher_ckpt = "exp/structured3d/semseg-litept-base-v1m1/model/model_best.pth"
 
+# ── MODEL: identical to semseg-lw-c-kd-tb-200epoch.py — DO NOT MODIFY ────────
 model = dict(
     type="DistillationSegmentorV2",
+    num_classes=25,
+    backbone_out_channels=54,
 
-    # ── Student architecture (lw-c — same as semseg-litept-lw-c.py) ───────────
-    num_classes=20,
-    backbone_out_channels=54,           # = enc_channels[1] for lw-c = 54
+    # ── Student (lw-c — unchanged) ────────────────────────────────────────
     backbone=dict(
         type="LitePT",
         in_channels=6,
         order=("z", "z-trans", "hilbert", "hilbert-trans"),
         stride=(2, 2, 2, 2),
-        enc_depths=(2, 2, 2, 4, 2),              # stage 3: 4 blocks (vs 6 in teacher)
-        enc_channels=(36, 54, 108, 180, 360),    # narrower channels (vs 252,504 in teacher)
-        enc_num_head=(2, 3, 6, 10, 20),          # head_dim=18 ✓
+        enc_depths=(2, 2, 2, 4, 2),
+        enc_channels=(36, 54, 108, 180, 360),
+        enc_num_head=(2, 3, 6, 10, 20),
         enc_patch_size=(1024, 1024, 1024, 1024, 1024),
         enc_conv=(True, True, True, False, False),
         enc_attn=(False, False, False, True, True),
@@ -80,23 +114,22 @@ model = dict(
         enc_mode=False,
     ),
 
-    # ── Teacher architecture (full LitePT baseline — semseg-litept-rerun) ─────
+    # ── Teacher: LitePT-Base (unchanged) ─────────────────────────────────
     teacher_backbone=dict(
         type="LitePT",
         in_channels=6,
         order=("z", "z-trans", "hilbert", "hilbert-trans"),
         stride=(2, 2, 2, 2),
-        enc_depths=(2, 2, 2, 6, 2),              # 6 blocks at stage 3
-        enc_channels=(36, 72, 144, 252, 504),    # full channels
-        enc_num_head=(2, 4, 8, 14, 28),          # head_dim=18 ✓
+        enc_depths=(3, 3, 3, 12, 3),
+        enc_channels=(54, 108, 216, 432, 576),
+        enc_num_head=(3, 6, 12, 24, 32),
         enc_patch_size=(1024, 1024, 1024, 1024, 1024),
         enc_conv=(True, True, True, False, False),
         enc_attn=(False, False, False, True, True),
         enc_rope_freq=(100.0, 100.0, 100.0, 100.0, 100.0),
-        # Decoder params are irrelevant but keep them for config consistency:
         dec_depths=(0, 0, 0, 0),
-        dec_channels=(72, 72, 144, 252),
-        dec_num_head=(4, 4, 8, 14),
+        dec_channels=(72, 108, 216, 432),
+        dec_num_head=(4, 6, 12, 24),
         dec_patch_size=(1024, 1024, 1024, 1024),
         dec_conv=(False, False, False, False),
         dec_attn=(False, False, False, False),
@@ -109,53 +142,68 @@ model = dict(
         drop_path=0.3,
         shuffle_orders=True,
         pre_norm=True,
-        key_prefix="teacher_",   # guarantees no cache collision with student
+        key_prefix="teacher_",
         enc_mode=True,
     ),
 
-    # ── Teacher checkpoint ────────────────────────────────────────────────────
     teacher_ckpt=_teacher_ckpt,
+    distill_stages=(3, 4),
+    pointwise_weight=1.0,   # unchanged
+    relational_weight=2.0,  # unchanged
+    relational_n_sample=512,
 
-    # ── Distillation settings ──────────────────────────────────────────────────
-    distill_stages=(3, 4),    # attention stages only (where student/teacher differ)
-    pointwise_weight=1.0,     # α: per-point cosine KD
-    relational_weight=2.0,    # β: SRFD pairwise similarity (novel, higher weight)
-    relational_n_sample=512,  # max points for NxN similarity matrix (cheap at stages 3,4)
-
-    # ── Segmentation losses (same as lw-c) ───────────────────────────────────
     criteria=[
         dict(type="CrossEntropyLoss", loss_weight=1.0, ignore_index=-1),
         dict(type="LovaszLoss", mode="multiclass", loss_weight=1.0, ignore_index=-1),
     ],
 )
 
-# ─── Optimizer / Scheduler (identical to lw-c) ────────────────────────────────
-epoch      = 1200
-eval_epoch = 100
-optimizer  = dict(type="AdamW", lr=0.006, weight_decay=0.05)
+# ── SCHEDULER ─────────────────────────────────────────────────────────────────
+# [CHANGED 2] epoch: 200 → 100.
+epoch      = 100
+
+# [CHANGED 3] eval_epoch: 200 → 50.
+#   Begin validation at the halfway point of the 100-epoch schedule so we
+#   can track and save the best model throughout the second half of training.
+eval_epoch = 50
+
+# [CHANGED 4] optimizer lr: 0.012 → 0.018 (×1.5).
+optimizer  = dict(type="AdamW", lr=0.018, weight_decay=0.05)
+
 scheduler  = dict(
     type="OneCycleLR",
-    max_lr=[0.006, 0.0006],
-    pct_start=0.05,
+    # [CHANGED 5] max_lr: [0.012, 0.0012] → [0.018, 0.0018] (×1.5).
+    #   Compensates for halved gradient steps; 1:10 block/head ratio preserved.
+    max_lr=[0.018, 0.0018],
+    # [CHANGED 6] pct_start: 0.05 → 0.10.
+    #   0.10 × 100 = 10 epochs of warmup, matching the original 0.05 × 200 = 10.
+    #   Especially important for tb: the Base teacher is larger and its SRFD
+    #   relational targets span higher-dimensional spaces (stages-3/4 teacher
+    #   channels: 216 and 432), so the student projectors need the extra
+    #   warmup stability at the reduced initial LR.
+    pct_start=0.10,
     anneal_strategy="cos",
-    div_factor=10.0,
-    final_div_factor=1000.0,
+    div_factor=10.0,          # initial_lr = max_lr / 10 — unchanged
+    final_div_factor=1000.0,  # min_lr = initial_lr / 1000 — unchanged
 )
-param_dicts = [dict(keyword="block", lr=0.0006)]
 
-# ─── Dataset (identical to lw-c) ──────────────────────────────────────────────
-dataset_type = "ScanNetDataset"
-data_root    = "data/scannet"
+# [CHANGED 4 continued] block lr: 0.0012 → 0.0018 (×1.5).
+param_dicts = [dict(keyword="block", lr=0.0018)]
+
+# ── DATASET: identical to semseg-lw-c-kd-tb-200epoch.py — DO NOT MODIFY ──────
+dataset_type = "Structured3DDataset"
+data_root    = "data/structured3d"
 
 data = dict(
-    num_classes=20,
+    num_classes=25,
     ignore_index=-1,
-    names=[
+    names=(
         "wall", "floor", "cabinet", "bed", "chair", "sofa", "table",
-        "door", "window", "bookshelf", "picture", "counter", "desk",
-        "curtain", "refridgerator", "shower curtain", "toilet", "sink",
-        "bathtub", "otherfurniture",
-    ],
+        "door", "window", "picture", "desk", "shelves", "curtain",
+        "dresser", "pillow", "mirror", "ceiling", "refrigerator",
+        "television", "nightstand", "sink", "lamp", "otherstructure",
+        "otherfurniture", "otherprop",
+    ),
     train=dict(
         type=dataset_type,
         split="train",
@@ -175,6 +223,7 @@ data = dict(
             dict(type="ChromaticJitter", p=0.95, std=0.05),
             dict(type="GridSample", grid_size=0.02, hash_type="fnv",
                  mode="train", return_grid_coord=True),
+            dict(type="SphereCrop", sample_rate=0.8, mode="random"),
             dict(type="SphereCrop", point_max=102400, mode="random"),
             dict(type="CenterShift", apply_z=False),
             dict(type="NormalizeColor"),
@@ -214,13 +263,8 @@ data = dict(
         ],
         test_mode=True,
         test_cfg=dict(
-            voxelize=dict(
-                type="GridSample",
-                grid_size=0.02,
-                hash_type="fnv",
-                mode="test",
-                return_grid_coord=True,
-            ),
+            voxelize=dict(type="GridSample", grid_size=0.02, hash_type="fnv",
+                          mode="test", return_grid_coord=True),
             crop=None,
             post_transform=[
                 dict(type="CenterShift", apply_z=False),
@@ -262,6 +306,9 @@ hooks = [
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
     dict(type="SemSegEvaluator"),
-    dict(type="CheckpointSaver", save_freq=10),
+    # save_freq=None: save every epoch, same as the 200-epoch KD config.
+    # 100 epochs is still manageable and ensures the best checkpoint is never
+    # missed under the compressed schedule.
+    dict(type="CheckpointSaver", save_freq=None),
     dict(type="PreciseEvaluator", test_last=False),
 ]

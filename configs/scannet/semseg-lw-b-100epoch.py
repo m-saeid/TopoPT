@@ -1,51 +1,48 @@
 """
-configs/scannet/semseg-litept-lw-c-lara3dv2-g32.py
-====================================================
-LitePT-LW-C + LaRA3D-V2(G=32)   [Strategy-2b  Row S8-V2  —  KEY generality test]
+configs/scannet/semseg-litept-lw-b.py
+======================================
+LitePT-LW-B  CHANNEL REDUCTION ONLY  [Strategy-1  Row S2]
 
-Backbone: lw-c (S4: depth+channel reduction, P=1024 patches unchanged)
-Attention: GroupLatentAttentionV2 (Perceiver-style) on encoder stages 3 and 4
+Single change vs S0 baseline:
+  enc_channels : (36, 72, 144, 252, 504)
+               → (36, 54, 108, 180, 360)   = 18 × (2, 3, 6, 10, 20)
 
-  enc_channels  = (36, 54, 108, 180, 360)   — stage 3: C=180, stage 4: C=360
-  enc_patch_size = (1024, 1024, 1024, 1024, 1024)   — full patches
-  enc_attn_type = ("flat", "flat", "flat", "group_v2", "group_v2")
-  group_size = 32   →   K = 1024 // 32 = 32 tokens per group
-  num_latents = 1   →   1 latent per group
-  gate_init = 0.0   →   starts as flat attention, learns injection
+*** PointROPE CUDA kernel constraint ***
+  The PointROPE kernel requires:  head_dim % 6 == 0
+  (3D Rotary Position Encoding needs pairs for x, y, z → divisible by 6)
+  The original uses head_dim=18 everywhere (18 % 6 = 0 ✓).
+  The reduced channels must therefore also be multiples of 18.
+  → channels chosen as 18×(2, 3, 6, 10, 20) = (36,54,108,180,360)
+  → head_dim = 18 at every stage ✓
 
-What this answers:
-  "Does LaRA3D-V2 improve on the lw-c flat baseline (74.95%)?"
+Channel reduction vs baseline:
+  Stage 0:  36 → 36   ( 0%  — conv stage, unchanged)
+  Stage 1:  72 → 54   (-25% — conv stage)
+  Stage 2: 144 → 108  (-25% — conv stage)
+  Stage 3: 252 → 180  (-29% — attention stage, params ∝ C²: ×0.51)
+  Stage 4: 504 → 360  (-29% — attention stage, params ∝ C²: ×0.51)
 
-  If YES: LaRA3D-V2 is beneficial even without patch reduction.
-    Hierarchical local+global reasoning > flat global attention at P=1024.
-    This is a STRONGER paper claim: V2 is a general replacement, not just
-    a patch-reduction compensator.
+backbone_out_channels = enc_channels[1] = 54
+dec_channels = (54, 54, 108, 180)   dec[s] out = enc_channels[s]
+dec_num_head = (3, 3, 6, 10)        head_dim = 18 in decoder too ✓
 
-  If NEUTRAL (within ±0.1%): V2 is patch-reduction-specific (still valid).
+What this ablation isolates:
+  S0 → S2: pure cost of channel reduction (depth and patch UNCHANGED).
+  Compare with S0→S1 (lw-a): both give ~0.81× and ~0.62× GFLOPs respectively.
+  The mIoU comparison tells us which axis (depth vs channel) costs more
+  accuracy per unit of compute saved — critical for the paper argument.
 
-Key comparison to V1:
-  lw-c + LaRA3D-V1 (mean-pool):  73.99% test  (−0.96% vs lw-c)
-  lw-c + LaRA3D-V2 (Perceiver):  expected ≥ 74.95%  (≥ baseline)
+Architecture delta vs S0:
+  enc_channels   : (36,72,144,252,504) → (36,54,108,180,360)  ← ONLY CHANGE
+  enc_num_head   : (2,4,8,14,28)       → (2,3,6,10,20)        ← adjusted (head_dim still 18)
+  backbone_out_channels : 72 → 54
+  dec_channels   : (72,72,144,252)     → (54,54,108,180)
+  dec_num_head   : (4,4,8,14)          → (3,3,6,10)           ← adjusted (head_dim still 18)
+  enc_depths, enc_patch_size, enc_conv, enc_attn: ALL UNCHANGED
 
-Parameter count:
-  lw-c flat:     5.84M params
-  lw-c + V2-G32: ~7.1M params  (+1.3M for cross-attn projections + latents)
-  lw-c + V1-G32: 7.02M params
-
-  V2 adds: latent_to_q + token_to_k + token_to_v + broadcast_proj + gate
-  At stage 3 (C=180): 4 × 180² = 129,600 extra params per block × 4 blocks = 518K
-  At stage 4 (C=360): 4 × 360² = 518,400 extra params per block × 2 blocks = 1,037K
-  Total extra: ~1.55M → ~7.39M total
-
-GFLOPs: same as lw-c (12.95) since group_attn FLOPs < profiler measurement error
-
-Expected test mIoU: ≥ 74.95% (target: 75.2–75.5%)
-GPU: RTX 3090 (24 GB), ~20h
-
-PointROPE constraint:
-  enc_channels = (36, 54, 108, 180, 360) = 18×(2,3,6,10,20)
-  enc_num_head = (2, 3, 6, 10, 20)
-  head_dim = 18 at every stage → 18 % 6 == 0 ✓
+GFLOPs (profiler, n_input=60 000): ~15.8 GFLOPs  (~0.62× baseline)
+Params: ~65% of baseline
+Expected mIoU: ~72–74%  (1–2.5% drop; channel width is the primary accuracy lever)
 """
 
 _base_ = ["../_base_/default_runtime.py"]
@@ -57,38 +54,31 @@ empty_cache = False
 enable_amp  = True
 clip_grad   = 1.0
 
-save_path = "exp/scannet/semseg-litept-lw-c-lara3dv2-g32"
+save_path = "exp/scannet/semseg-litept-lw-b-100epoch"
 
 model = dict(
     type="DefaultSegmentorV2",
     num_classes=20,
-    backbone_out_channels=54,
+    backbone_out_channels=54,        # = enc_channels[1] = 54
     backbone=dict(
         type="LitePT",
         in_channels=6,
         order=("z", "z-trans", "hilbert", "hilbert-trans"),
         stride=(2, 2, 2, 2),
-        # ── Same as lw-c (S4) — no architecture changes ───────────────────
-        enc_depths=(2, 2, 2, 4, 2),
-        enc_channels=(36, 54, 108, 180, 360),
-        enc_num_head=(2, 3, 6, 10, 20),
-        enc_patch_size=(1024, 1024, 1024, 1024, 1024),   # FULL patches P=1024
+        enc_depths=(2, 2, 2, 6, 2),              # UNCHANGED — same depth as S0
+        enc_channels=(36, 54, 108, 180, 360),    # ← CHANGE: 18×(2,3,6,10,20)
+        enc_num_head=(2, 3, 6, 10, 20),          # ← adjusted: head_dim=18 at every stage
+        enc_patch_size=(1024, 1024, 1024, 1024, 1024),  # UNCHANGED
         enc_conv=(True, True, True, False, False),
         enc_attn=(False, False, False, True, True),
         enc_rope_freq=(100.0, 100.0, 100.0, 100.0, 100.0),
         dec_depths=(0, 0, 0, 0),
-        dec_channels=(54, 54, 108, 180),
-        dec_num_head=(3, 3, 6, 10),
-        dec_patch_size=(1024, 1024, 1024, 1024),
+        dec_channels=(54, 54, 108, 180),         # dec[s] out = enc_channels[s]
+        dec_num_head=(3, 3, 6, 10),              # head_dim = 18 in decoder ✓
+        dec_patch_size=(1024, 1024, 1024, 1024), # dec_patch[s] = enc_patch[s]
         dec_conv=(False, False, False, False),
         dec_attn=(False, False, False, False),
         dec_rope_freq=(100.0, 100.0, 100.0, 100.0),
-        # ── LaRA3D-V2 on stages 3+4 ──────────────────────────────────────
-        enc_attn_type=("flat", "flat", "flat", "group_v2", "group_v2"),
-        dec_attn_type=("flat", "flat", "flat", "flat"),
-        group_size=32,       # G=32 → K = 1024 // 32 = 32 tokens/group
-        num_latents=1,       # 1 Perceiver latent per group
-        gate_init=0.0,       # start as flat, gradually learn injection
         mlp_ratio=4,
         qkv_bias=True,
         qk_scale=None,

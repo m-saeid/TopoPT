@@ -1,22 +1,22 @@
 """
-configs/structured3d/semseg-lw-c-kd-tb-100epoch.py
+configs/structured3d/semseg-lw-c-kd-ts-100epoch.py
 ===============================================
 LitePT-LW-C + SRFD KD — Structured3D Semantic Segmentation
-Teacher: LitePT-Base (semseg-litept-base-v1m1)
+Teacher: LitePT-Small (semseg-litept-small-v1m1)
 100-epoch fast-run variant (halved from the 200-epoch baseline).
 
-bash scripts/train.sh -g 1 -d structured3d -c semseg-lw-c-kd-tb-100epoch \
-                      -n semseg-lw-c-kd-tb-100epoch
+bash scripts/train.sh -g 1 -d structured3d -c semseg-lw-c-kd-ts-100epoch \
+                      -n semseg-lw-c-kd-ts-100epoch
 
 STUDENT : lw-c backbone + DistillationSegmentorV2
-TEACHER : LitePT-Base from exp/structured3d/semseg-litept-base-v1m1/model/model_best.pth
+TEACHER : LitePT-Small from exp/structured3d/semseg-litept-small-v1m1/model/model_best.pth
 
 Training loss (unchanged):
   L = L_CE + L_Lovász
     + 1.0 × L_pointwise_kd   (per-point cosine, stages 3+4)
     + 2.0 × L_relational_kd  (SRFD pairwise similarity, stages 3+4)
 
-Differences vs semseg-lw-c-kd-tb-200epoch.py
+Differences vs semseg-lw-c-kd-ts-200epoch.py
 (MODEL ARCHITECTURE AND DISTILLATION WEIGHTS ARE UNCHANGED — only training
  hyper-parameters are modified):
 
@@ -24,39 +24,41 @@ Differences vs semseg-lw-c-kd-tb-200epoch.py
        Rationale: time budget cut in half for a faster Structured3D run.
 
   2. eval_epoch       : 200  → 50
-       Rationale: the 200-epoch config evaluated only at the final epoch.
-       With 100 epochs we begin validation at epoch 50 to monitor the second
-       half of training and catch the best checkpoint if it appears before the
-       final epoch.
+       Rationale: the 200-epoch config evaluated only at the final epoch
+       (eval_epoch == epoch).  With 100 epochs we begin validation at epoch 50
+       (halfway), which matches the proportional evaluation onset used in the
+       non-KD baseline and lets us monitor convergence during the second half.
 
   3. optimizer lr     : 0.012 → 0.018  (×1.5)
   4. scheduler max_lr : [0.012, 0.0012] → [0.018, 0.0018]  (×1.5)
   5. param_dicts lr   : 0.0012 → 0.0018  (×1.5)
-       Rationale: halving training steps roughly halves the total gradient
-       signal.  The linear-scaling heuristic suggests √2 ≈ 1.41×; we apply
-       1.5× as a conservative round figure.
-       Base-teacher note: the capacity gap between lw-c student channels
-       (180/360) and Base teacher channels (216/432 at stages 3/4) is larger
-       than for the Small teacher (252/504 — Small channels are wider than
-       Base at stages 3–4).  The higher LR helps the student projectors
-       (φ_s : R^{student_ch} → R^{teacher_ch}) converge faster to a useful
-       projection, which is more important when the epoch budget is tight.
-       The backbone-block LR (0.0018) and head LR (0.018) maintain 1:10 ratio.
+       Rationale: halving total training steps halves the cumulative gradient
+       signal.  The linear-scaling rule for step-based schedulers suggests
+       scaling peak LR by √(200/100) = √2 ≈ 1.41; we use the slightly more
+       conservative 1.5× to avoid instability while still compensating for the
+       lost gradient updates.  The backbone-block LR (0.0018) and head LR
+       (0.018) maintain their 1:10 ratio.
+       For KD specifically: fewer gradient steps also mean fewer opportunities
+       for the SRFD relational signal to reshape the student's feature manifold.
+       The higher LR accelerates this reshaping without altering the loss
+       formulation itself.
 
   6. pct_start        : 0.05 → 0.10
-       Rationale: restores the original 10-epoch absolute warmup.
-       At pct_start=0.05 and 100 epochs the warmup would be only 5 epochs —
-       too short when a stronger Base teacher is emitting high-magnitude SRFD
-       relational gradients from the very first batch.  The longer warmup at
-       max_lr / div_factor = 0.0018 lets the student adapt before full LR
-       exposure.
+       Rationale: at 200 epochs, pct_start=0.05 gave 10 epochs of warmup.
+       At 100 epochs the same fraction gives only 5 epochs — too short when
+       the peak LR is 1.5× higher and the SRFD relational loss adds extra
+       gradient noise in the first iterations.  Setting 0.10 restores the
+       original 10-epoch absolute warmup, ensuring the student adapts to the
+       teacher signal before the LR climbs to its peak.
+       Expected effect: smoother early-epoch loss without affecting convergence
+       in the annealing phase.
 
-  7. save_freq        : None → None  (unchanged; saves every epoch)
+  7. save_freq        : None → None  (unchanged; KD runs save every epoch)
 
-  8. save_path updated to reflect 100-epoch variant.
+  8. save_path updated to reflect the 100-epoch variant.
 
 No changes to:
-  - Student/teacher model architecture (backbone channels, depths, heads, etc.)
+  - Student/teacher model architecture
   - Distillation stages, pointwise_weight, relational_weight, relational_n_sample
   - teacher_ckpt path
   - Data pipeline / augmentation
@@ -68,16 +70,16 @@ _base_ = ["../_base_/default_runtime.py"]
 batch_size  = 3
 num_worker  = 4
 mix_prob    = 0.8
-empty_cache = False
+empty_cache = True
 enable_amp  = True
 clip_grad   = 1.0
 
-# [CHANGED 1] save_path updated to reflect the 100-epoch / Base-teacher variant.
-save_path = "exp/structured3d/semseg-lw-c-kd-tb-100epoch"
+# [CHANGED 1] save_path updated to reflect 100-epoch variant.
+save_path = "exp/structured3d/semseg-lw-c-kd-ts-50epoch"
 
-_teacher_ckpt = "exp/structured3d/semseg-litept-base-v1m1/model/model_best.pth"
+_teacher_ckpt = "exp/structured3d/semseg-litept-small-v1m1/model/model_best.pth"
 
-# ── MODEL: identical to semseg-lw-c-kd-tb-200epoch.py — DO NOT MODIFY ────────
+# ── MODEL: identical to semseg-lw-c-kd-ts-200epoch.py — DO NOT MODIFY ────────
 model = dict(
     type="DistillationSegmentorV2",
     num_classes=25,
@@ -114,22 +116,22 @@ model = dict(
         enc_mode=False,
     ),
 
-    # ── Teacher: LitePT-Base (unchanged) ─────────────────────────────────
+    # ── Teacher: LitePT-Small (unchanged) ────────────────────────────────
     teacher_backbone=dict(
         type="LitePT",
         in_channels=6,
         order=("z", "z-trans", "hilbert", "hilbert-trans"),
         stride=(2, 2, 2, 2),
-        enc_depths=(3, 3, 3, 12, 3),
-        enc_channels=(54, 108, 216, 432, 576),
-        enc_num_head=(3, 6, 12, 24, 32),
+        enc_depths=(2, 2, 2, 6, 2),
+        enc_channels=(36, 72, 144, 252, 504),
+        enc_num_head=(2, 4, 8, 14, 28),
         enc_patch_size=(1024, 1024, 1024, 1024, 1024),
         enc_conv=(True, True, True, False, False),
         enc_attn=(False, False, False, True, True),
         enc_rope_freq=(100.0, 100.0, 100.0, 100.0, 100.0),
         dec_depths=(0, 0, 0, 0),
-        dec_channels=(72, 108, 216, 432),
-        dec_num_head=(4, 6, 12, 24),
+        dec_channels=(72, 72, 144, 252),
+        dec_num_head=(4, 4, 8, 14),
         dec_patch_size=(1024, 1024, 1024, 1024),
         dec_conv=(False, False, False, False),
         dec_attn=(False, False, False, False),
@@ -148,8 +150,8 @@ model = dict(
 
     teacher_ckpt=_teacher_ckpt,
     distill_stages=(3, 4),
-    pointwise_weight=1.0,   # unchanged
-    relational_weight=2.0,  # unchanged
+    pointwise_weight=1.0,   # unchanged — pointwise cosine loss weight
+    relational_weight=2.0,  # unchanged — SRFD pairwise similarity loss weight
     relational_n_sample=512,
 
     criteria=[
@@ -163,8 +165,9 @@ model = dict(
 epoch      = 100
 
 # [CHANGED 3] eval_epoch: 200 → 50.
-#   Begin validation at the halfway point of the 100-epoch schedule so we
-#   can track and save the best model throughout the second half of training.
+#   Original: eval only at the final epoch (eval_epoch == epoch == 200).
+#   100-epoch run: start validation at epoch 50 to mirror the same
+#   "second half of training" evaluation window and allow early stopping.
 eval_epoch = 50
 
 # [CHANGED 4] optimizer lr: 0.012 → 0.018 (×1.5).
@@ -172,15 +175,15 @@ optimizer  = dict(type="AdamW", lr=0.018, weight_decay=0.05)
 
 scheduler  = dict(
     type="OneCycleLR",
-    # [CHANGED 5] max_lr: [0.012, 0.0012] → [0.018, 0.0018] (×1.5).
-    #   Compensates for halved gradient steps; 1:10 block/head ratio preserved.
+    # [CHANGED 5] max_lr scaled ×1.5 to compensate for half the gradient steps.
+    #   The 1:10 ratio between block lr (0.0018) and head lr (0.018) is preserved.
     max_lr=[0.018, 0.0018],
     # [CHANGED 6] pct_start: 0.05 → 0.10.
-    #   0.10 × 100 = 10 epochs of warmup, matching the original 0.05 × 200 = 10.
-    #   Especially important for tb: the Base teacher is larger and its SRFD
-    #   relational targets span higher-dimensional spaces (stages-3/4 teacher
-    #   channels: 216 and 432), so the student projectors need the extra
-    #   warmup stability at the reduced initial LR.
+    #   Restores the original 10 absolute warmup epochs (0.10 × 100 = 10).
+    #   Critical for KD: the SRFD relational loss is noisy in the first epochs
+    #   because the student features are random; a longer warmup at the lower
+    #   initial LR (max_lr / div_factor = 0.0018) lets the student features
+    #   stabilise before the relational supervision takes full effect.
     pct_start=0.10,
     anneal_strategy="cos",
     div_factor=10.0,          # initial_lr = max_lr / 10 — unchanged
@@ -190,7 +193,7 @@ scheduler  = dict(
 # [CHANGED 4 continued] block lr: 0.0012 → 0.0018 (×1.5).
 param_dicts = [dict(keyword="block", lr=0.0018)]
 
-# ── DATASET: identical to semseg-lw-c-kd-tb-200epoch.py — DO NOT MODIFY ──────
+# ── DATASET: identical to semseg-lw-c-kd-ts-200epoch.py — DO NOT MODIFY ──────
 dataset_type = "Structured3DDataset"
 data_root    = "data/structured3d"
 
@@ -306,9 +309,9 @@ hooks = [
     dict(type="IterationTimer", warmup_iter=2),
     dict(type="InformationWriter"),
     dict(type="SemSegEvaluator"),
-    # save_freq=None: save every epoch, same as the 200-epoch KD config.
-    # 100 epochs is still manageable and ensures the best checkpoint is never
-    # missed under the compressed schedule.
+    # save_freq=None: save every epoch (same as 200-epoch KD config).
+    # With only 100 epochs this remains affordable and ensures we never miss
+    # the best checkpoint, which may occur earlier under the compressed schedule.
     dict(type="CheckpointSaver", save_freq=None),
     dict(type="PreciseEvaluator", test_last=False),
 ]

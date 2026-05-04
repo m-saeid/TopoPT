@@ -1,49 +1,30 @@
 """
-configs/scannet/semseg-litept-lw-e-lara3d-g32.py
-==================================================
-LitePT-LW-E + LaRA3D(G=32)  [Strategy-2  Row S6★]
+configs/scannet/semseg-litept-lw-a.py
+======================================
+LitePT-LW-A  DEPTH REDUCTION ONLY  [Strategy-1  Row S1]
 
-KEY EXPERIMENT — the main paper contribution.
+Single change vs S0 baseline:
+  enc_depths  stage 3:  6 → 4   (remove 2 attention blocks)
 
-Backbone: identical to lw-e (S5):
-  enc_depths    = (2, 2, 2, 4, 2)
-  enc_channels  = (36, 54, 108, 180, 360) = 18×(2,3,6,10,20)
-  enc_patch_sz  = (1024, 1024, 1024, 512, 512)
+Rationale:
+  Stage 3 (C=252, 6 blocks) has the highest block-count of any stage.
+  Blocks 5-6 yield diminishing residual-learning returns — the gradients
+  at those blocks are small once the earlier 4 blocks have converged.
+  Stage 3 is building intermediate structural features; the final semantic
+  representation lives in stage 4, which is untouched.
+  This is the lowest-risk, cheapest single reduction available.
 
-NEW: at the two attention stages (3 and 4), replace flat PointROPEAttention
-     with GroupLatentAttention (LaRA3D):
-  enc_attn_type = ("flat", "flat", "flat", "group", "group")
-  group_size    = 32   → K = patch_size // G = 512 // 32 = 16 tokens/group
+What this ablation isolates in the paper table:
+  S0 → S1  =  pure cost of depth reduction  (no channel, no patch change)
+  Expected: <0.3% mIoU drop  →  depth cut at stage 3 is essentially free.
+  If true: always apply this reduction as a baseline before comparing ideas.
 
-GroupLatentAttention pipeline (per patch of P=512 tokens):
-  ─────────────────────────────────────────────────────────
-  Step 1 Local:    32 groups × 16 tokens → intra-group self-attn (O(16²)=256)
-  Step 2 Compress: mean-pool each group → 32 group latents + centroid coords
-  Step 3 Global:   32 latents mutual self-attn (O(32²)=1024) ← LaRa principle
-  Step 4 Broadcast: group context added to all 16 member tokens
-  ─────────────────────────────────────────────────────────
-  Total attention ops: 32×256 + 1024 = 9216  vs  512² = 262144 (flat)
-  Speed-up (attention): ~28× per block
+Architecture delta vs S0:
+  enc_depths  : (2, 2, 2, 6→4, 2)     ← ONLY CHANGE
+  All other fields: identical to S0.
 
-Paper motivation:
-  Strategy-1 shows patch-size reduction (S3/lw-d) costs -1.10% mIoU while
-  depth+channel reduction (S4/lw-c) costs only -0.32% mIoU. Patch size is
-  the dominant accuracy bottleneck in the fully-lightweight model (S5/lw-e).
-  LaRA3D addresses this by restoring global-within-patch context at O(G·K²)
-  cost, aiming to recover the patch-reduction penalty without increasing P.
-
-Expected outcome:
-  mIoU  : > 74.95% (lw-c), ideally ~75.0–75.2%
-  Params : ~7.01M  (+1.17M vs lw-e due to global_qkv + norm_latent)
-  GFLOPs : ~9.65   (< lw-c's 12.95 AND < lw-e's 11.22 in attention stages)
-  Latency: similar to lw-e (~20ms), since local attn on K=16 is very fast
-
-Architecture summary (head_dim = 18, PointROPE satisfied: 18%6=0 ✓):
-  stage 0: 36ch / 2h = 18  conv  flat   ✓
-  stage 1: 54ch / 3h = 18  conv  flat   ✓
-  stage 2: 108ch/ 6h = 18  conv  flat   ✓
-  stage 3: 180ch/10h = 18  attn  GROUP  G=32, K=16  ✓
-  stage 4: 360ch/20h = 18  attn  GROUP  G=32, K=16  ✓
+FLOPs (profiler, n_input=60 000): ~20.6 GFLOPs  (~0.81× baseline)
+Expected mIoU:  ~74.2–75.2%   (drop <0.3%)
 """
 
 _base_ = ["../_base_/default_runtime.py"]
@@ -55,37 +36,31 @@ empty_cache = False
 enable_amp  = True
 clip_grad   = 1.0
 
-save_path = "exp/scannet/semseg-litept-lw-e-lara3d-g32"
+save_path = "exp/scannet/semseg-litept-lw-a-100epoch"
 
 model = dict(
     type="DefaultSegmentorV2",
     num_classes=20,
-    backbone_out_channels=54,        # = enc_channels[1]
+    backbone_out_channels=72,        # = enc_channels[1]  — unchanged
     backbone=dict(
         type="LitePT",
         in_channels=6,
         order=("z", "z-trans", "hilbert", "hilbert-trans"),
         stride=(2, 2, 2, 2),
-        # ── Same as lw-e (S5) ─────────────────────────────────────────────
-        enc_depths=(2, 2, 2, 4, 2),
-        enc_channels=(36, 54, 108, 180, 360),       # 18×(2,3,6,10,20)
-        enc_num_head=(2, 3, 6, 10, 20),              # head_dim=18 ✓
-        enc_patch_size=(1024, 1024, 1024, 512, 512), # small patches at attn stages
+        enc_depths=(2, 2, 2, 4, 2),              # ← CHANGE: stage 3:  6 → 4
+        enc_channels=(36, 72, 144, 252, 504),    # unchanged
+        enc_num_head=(2, 4, 8, 14, 28),          # head_dim = 18 — unchanged
+        enc_patch_size=(1024, 1024, 1024, 1024, 1024),  # unchanged
         enc_conv=(True, True, True, False, False),
         enc_attn=(False, False, False, True, True),
         enc_rope_freq=(100.0, 100.0, 100.0, 100.0, 100.0),
         dec_depths=(0, 0, 0, 0),
-        dec_channels=(54, 54, 108, 180),
-        dec_num_head=(3, 3, 6, 10),
-        dec_patch_size=(1024, 1024, 1024, 512),     # dec_patch[s] = enc_patch[s]
+        dec_channels=(72, 72, 144, 252),         # unchanged
+        dec_num_head=(4, 4, 8, 14),
+        dec_patch_size=(1024, 1024, 1024, 1024), # dec_patch[s] = enc_patch[s]
         dec_conv=(False, False, False, False),
         dec_attn=(False, False, False, False),
         dec_rope_freq=(100.0, 100.0, 100.0, 100.0),
-        # ── LaRA3D parameters (NEW) ───────────────────────────────────────
-        enc_attn_type=("flat", "flat", "flat", "group", "group"),
-        dec_attn_type=("flat", "flat", "flat", "flat"),  # dec_depths=0, not used
-        group_size=32,   # G=32 → K = 512//32 = 16 tokens/group
-        # ── Shared hyperparams ───────────────────────────────────────────
         mlp_ratio=4,
         qkv_bias=True,
         qk_scale=None,
@@ -128,7 +103,9 @@ data = dict(
         "bathtub", "otherfurniture",
     ],
     train=dict(
-        type=dataset_type, split="train", data_root=data_root,
+        type=dataset_type,
+        split="train",
+        data_root=data_root,
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
@@ -156,7 +133,9 @@ data = dict(
         test_mode=False,
     ),
     val=dict(
-        type=dataset_type, split="val", data_root=data_root,
+        type=dataset_type,
+        split="val",
+        data_root=data_root,
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="Copy", keys_dict={"segment": "origin_segment"}),
@@ -172,15 +151,22 @@ data = dict(
         test_mode=False,
     ),
     test=dict(
-        type=dataset_type, split="val", data_root=data_root,
+        type=dataset_type,
+        split="val",
+        data_root=data_root,
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="NormalizeColor"),
         ],
         test_mode=True,
         test_cfg=dict(
-            voxelize=dict(type="GridSample", grid_size=0.02, hash_type="fnv",
-                          mode="test", return_grid_coord=True),
+            voxelize=dict(
+                type="GridSample",
+                grid_size=0.02,
+                hash_type="fnv",
+                mode="test",
+                return_grid_coord=True,
+            ),
             crop=None,
             post_transform=[
                 dict(type="CenterShift", apply_z=False),

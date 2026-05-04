@@ -24,7 +24,7 @@ mix_prob    = 0.8
 empty_cache = False
 enable_amp  = True
 
-save_path = "exp/nuscenes/semseg-litept-lw-c"
+save_path = "exp/nuscenes/semseg-litept-lw-c-50epoch"
 
 model = dict(
     type="DefaultSegmentorV2",

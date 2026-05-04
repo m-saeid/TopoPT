@@ -1,39 +1,30 @@
 """
-configs/scannet/semseg-litept-lw-c-lara3d-g32.py
-==================================================
-LitePT-LW-C + LaRA3D(G=32)  [Strategy-2  Generality ablation]
+configs/scannet/semseg-litept-rerun.py
+=======================================
+LitePT-S  BASELINE RERUN  [Strategy-1  Row S0★]
 
-Applies LaRA3D GroupLatentAttention on the lw-c backbone (depth+channel
-reduction, but NO patch-size reduction; enc_patch_size=1024 at stages 3,4).
+Identical to semseg-litept-small-v1m1.py.  Purpose: obtain a true
+single-run baseline mIoU under exactly the same conditions as all
+lightweight ablations (same seed, WandB project, epochs, hardware).
 
-  group_size=32  →  K = 1024 // 32 = 32 tokens per group
+Published LitePT numbers (75.4%) are averaged over multiple seeds.
+This run gives the honest single-run comparison number for the table.
 
-This ablation answers a separate and important question:
-  "Does LaRA3D help even when patches are not reduced (P=1024)?"
+Architecture (unchanged from original):
+  enc_channels  = (36, 72, 144, 252, 504)
+  enc_depths    = (2, 2, 2, 6, 2)
+  enc_patch_sz  = (1024, 1024, 1024, 1024, 1024)
+  Stages 0-2 : SubMConv3d blocks  (conv, no attention)
+  Stages 3-4 : PointROPEAttention blocks
+  head_dim    = channels / num_heads = 18 at every stage
 
-If lw-c+LaRA3D (P=1024, G=32, K=32) beats lw-c (flat P=1024):
-  → LaRA3D is beneficial as a general replacement, not just a patch-reduction
-    compensator. The local+global hierarchy is intrinsically better than flat
-    global attention, even at large patch sizes.
-  → This would be a STRONGER paper claim.
-
-If lw-c+LaRA3D ≈ lw-c (flat):
-  → LaRA3D's benefit is specific to the small-patch regime (patch-reduction
-    compensation). This is still a valid and useful paper claim.
-
-Attention FLOPs comparison (per block, stage 3, C=180, P=1024):
-  lw-c flat:          P² = 1024² = 1,048,576 attention ops
-  lw-c+LaRA3D(G=32):  G×K² + G² = 32×1024 + 1024 = 33,792  → 31× cheaper
-
-Parameter delta vs lw-c:
-  Same as lw-e case: +1.17M → ~7.01M total params
-
-Architecture:
-  All same as lw-c EXCEPT enc_attn_type and group_size
+Estimated FLOPs (profiler, n_input=60 000): 25.4 GFLOPs  (1.00×)
+Expected mIoU: ~74.5–75.5 %  (paper avg = 75.4 % across seeds)
 """
 
 _base_ = ["../_base_/default_runtime.py"]
 
+# ── Training hyper-parameters ─────────────────────────────────────────────────
 batch_size  = 12
 num_worker  = 24
 mix_prob    = 0.8
@@ -41,36 +32,32 @@ empty_cache = False
 enable_amp  = True
 clip_grad   = 1.0
 
-save_path = "exp/scannet/semseg-litept-lw-c-lara3d-g32"
+save_path = "exp/scannet/semseg-litept-rerun-100epoch"
 
+# ── Model ─────────────────────────────────────────────────────────────────────
 model = dict(
     type="DefaultSegmentorV2",
     num_classes=20,
-    backbone_out_channels=54,
+    backbone_out_channels=72,        # = enc_channels[1]
     backbone=dict(
         type="LitePT",
         in_channels=6,
         order=("z", "z-trans", "hilbert", "hilbert-trans"),
         stride=(2, 2, 2, 2),
-        # ── Same as lw-c (S4) ─────────────────────────────────────────────
-        enc_depths=(2, 2, 2, 4, 2),
-        enc_channels=(36, 54, 108, 180, 360),
-        enc_num_head=(2, 3, 6, 10, 20),
-        enc_patch_size=(1024, 1024, 1024, 1024, 1024),  # FULL patches (P=1024)
+        enc_depths=(2, 2, 2, 6, 2),
+        enc_channels=(36, 72, 144, 252, 504),
+        enc_num_head=(2, 4, 8, 14, 28),         # head_dim = 18 all stages
+        enc_patch_size=(1024, 1024, 1024, 1024, 1024),
         enc_conv=(True, True, True, False, False),
         enc_attn=(False, False, False, True, True),
         enc_rope_freq=(100.0, 100.0, 100.0, 100.0, 100.0),
         dec_depths=(0, 0, 0, 0),
-        dec_channels=(54, 54, 108, 180),
-        dec_num_head=(3, 3, 6, 10),
-        dec_patch_size=(1024, 1024, 1024, 1024),  # dec_patch[s]=enc_patch[s]
+        dec_channels=(72, 72, 144, 252),         # dec[s] out-channels = enc_channels[s]
+        dec_num_head=(4, 4, 8, 14),
+        dec_patch_size=(1024, 1024, 1024, 1024), # dec_patch[s] = enc_patch[s]
         dec_conv=(False, False, False, False),
         dec_attn=(False, False, False, False),
         dec_rope_freq=(100.0, 100.0, 100.0, 100.0),
-        # ── LaRA3D on full patches (P=1024, G=32, K=32) ──────────────────
-        enc_attn_type=("flat", "flat", "flat", "group", "group"),
-        dec_attn_type=("flat", "flat", "flat", "flat"),
-        group_size=32,   # G=32 → K = 1024//32 = 32 tokens/group
         mlp_ratio=4,
         qkv_bias=True,
         qk_scale=None,
@@ -87,12 +74,13 @@ model = dict(
     ],
 )
 
+# ── Schedule ──────────────────────────────────────────────────────────────────
 epoch      = 1200
 eval_epoch = 100
 optimizer  = dict(type="AdamW", lr=0.006, weight_decay=0.05)
 scheduler  = dict(
     type="OneCycleLR",
-    max_lr=[0.006, 0.0006],
+    max_lr=[0.006, 0.0006],   # 2 param groups: default + "block" keyword
     pct_start=0.05,
     anneal_strategy="cos",
     div_factor=10.0,
@@ -100,6 +88,7 @@ scheduler  = dict(
 )
 param_dicts = [dict(keyword="block", lr=0.0006)]
 
+# ── Dataset ───────────────────────────────────────────────────────────────────
 dataset_type = "ScanNetDataset"
 data_root    = "data/scannet"
 
@@ -113,7 +102,9 @@ data = dict(
         "bathtub", "otherfurniture",
     ],
     train=dict(
-        type=dataset_type, split="train", data_root=data_root,
+        type=dataset_type,
+        split="train",
+        data_root=data_root,
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="RandomDropout", dropout_ratio=0.2, dropout_application_ratio=0.2),
@@ -141,7 +132,9 @@ data = dict(
         test_mode=False,
     ),
     val=dict(
-        type=dataset_type, split="val", data_root=data_root,
+        type=dataset_type,
+        split="val",
+        data_root=data_root,
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="Copy", keys_dict={"segment": "origin_segment"}),
@@ -157,15 +150,22 @@ data = dict(
         test_mode=False,
     ),
     test=dict(
-        type=dataset_type, split="val", data_root=data_root,
+        type=dataset_type,
+        split="val",
+        data_root=data_root,
         transform=[
             dict(type="CenterShift", apply_z=True),
             dict(type="NormalizeColor"),
         ],
         test_mode=True,
         test_cfg=dict(
-            voxelize=dict(type="GridSample", grid_size=0.02, hash_type="fnv",
-                          mode="test", return_grid_coord=True),
+            voxelize=dict(
+                type="GridSample",
+                grid_size=0.02,
+                hash_type="fnv",
+                mode="test",
+                return_grid_coord=True,
+            ),
             crop=None,
             post_transform=[
                 dict(type="CenterShift", apply_z=False),
@@ -213,6 +213,7 @@ data = dict(
     ),
 )
 
+# ── Hooks ─────────────────────────────────────────────────────────────────────
 hooks = [
     dict(type="CheckpointLoader"),
     dict(type="ModelHook"),

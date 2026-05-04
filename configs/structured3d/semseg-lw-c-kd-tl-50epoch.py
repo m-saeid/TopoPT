@@ -79,7 +79,7 @@ enable_amp  = True
 clip_grad   = 1.0
 
 # [CHANGED 1] save_path updated to reflect the 100-epoch / Large-teacher variant.
-save_path = "exp/structured3d/semseg-lw-c-kd-tl-100epoch"
+save_path = "exp/structured3d/semseg-lw-c-kd-tl-50epoch"
 
 _teacher_ckpt = "exp/structured3d/semseg-litept-large-v1m1/model/model_best.pth"
 
