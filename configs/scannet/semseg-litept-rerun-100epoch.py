@@ -75,7 +75,7 @@ model = dict(
 )
 
 # ── Schedule ──────────────────────────────────────────────────────────────────
-epoch      = 1200
+epoch      = 100
 eval_epoch = 100
 optimizer  = dict(type="AdamW", lr=0.006, weight_decay=0.05)
 scheduler  = dict(
