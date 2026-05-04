@@ -1,5 +1,5 @@
 # NuScenes        lw
-bash scripts/train.sh -g 1 -d nuscenes -c semseg-lw-c -n nuscenes/semseg-lw-c
+# bash scripts/train.sh -g 1 -d nuscenes -c semseg-lw-c-kd-50epoch -n nuscenes/semseg-lw-c-kd-50epoch
 
-# Structured3D    lw  100 epoch
-bash scripts/train.sh -g 1 -d structured3d -c semseg-lw-c-100epoch -n structured3d/semseg-lw-c-100epoch
+
+bash scripts/profile_all.sh

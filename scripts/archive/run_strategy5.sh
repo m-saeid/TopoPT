@@ -1,1 +1,0 @@
-bash scripts/train.sh -g 1 -d scannet -c semseg-litept-lw-c-kd-2 -n s5/litept-lw-c-kd-2
