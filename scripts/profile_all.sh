@@ -161,14 +161,17 @@ get_student_config() {
 # ══════════════════════════════════════════════════════════════════════════════
 find_checkpoint() {
     local exp_dir="$1"
-    local model_dir="${exp_dir}/model"
-    if   [ -f "${model_dir}/model_best.pth" ]; then
-        echo "${model_dir}/model_best.pth"
-    elif [ -f "${model_dir}/model_last.pth" ]; then
-        echo "${model_dir}/model_last.pth"
-    else
-        echo ""
-    fi
+    local stem="$2"        # pass dataset-config_stem
+    # Check standard location first
+    for dir in "$exp_dir" "exp/litept/${stem}"; do
+        local model_dir="${dir}/model"
+        if   [ -f "${model_dir}/model_best.pth" ]; then
+            echo "${model_dir}/model_best.pth"; return
+        elif [ -f "${model_dir}/model_last.pth" ]; then
+            echo "${model_dir}/model_last.pth"; return
+        fi
+    done
+    echo ""
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
