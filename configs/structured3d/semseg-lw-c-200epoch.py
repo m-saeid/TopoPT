@@ -26,7 +26,7 @@ empty_cache = True # False
 enable_amp  = True
 clip_grad   = 1.0
 
-save_path = "exp/structured3d/semseg-litept-lw-c"
+save_path = "exp/structured3d/semseg-lw-c"
 
 model = dict(
     type="DefaultSegmentorV2",

@@ -60,7 +60,7 @@ enable_amp  = True
 clip_grad   = 1.0
 
 # ── [CHANGED 1/7] save_path updated to reflect 100-epoch variant ──────────────
-save_path = "exp/structured3d/semseg-litept-lw-c-50epoch"
+save_path = "exp/structured3d/semseg-lw-c-50epoch"
 
 # ── MODEL: identical to semseg-lw-c-200epoch.py — DO NOT MODIFY ───────────────
 model = dict(

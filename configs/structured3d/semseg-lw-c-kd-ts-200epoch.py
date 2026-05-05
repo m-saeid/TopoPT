@@ -24,7 +24,7 @@ empty_cache = True # False
 enable_amp  = True
 clip_grad   = 1.0
 
-save_path = "exp/structured3d/semseg-litept-lw-c-kd"
+save_path = "exp/structured3d/semseg-lw-c-kd"
 
 _teacher_ckpt = "exp/structured3d/semseg-litept-small-v1m1/model/model_best.pth"
 

@@ -25,7 +25,7 @@ mix_prob    = 0.8
 empty_cache = False
 enable_amp  = True
 
-save_path = "exp/nuscenes/semseg-litept-lw-c-kd-50epoch"
+save_path = "exp/nuscenes/semseg-lw-c-kd-50epoch"
 
 _teacher_ckpt = "exp/nuscenes/semseg-litept-small-v1m1/model/model_best.pth"
 
