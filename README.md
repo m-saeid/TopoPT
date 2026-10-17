@@ -1,7 +1,7 @@
 <div align="center">
 <h1>Relational Feature Distillation for Lightweight 3D Point Cloud Segmentation</h1>
 
-**NeurIPS 2026** *(anonymous submission)*
+**NeurIPS 2026 (Main Track as Poster)**
 
 <a href="https://arxiv.org/abs/XXXX.XXXXX"><img src="https://img.shields.io/badge/arXiv-TopoPT-red" alt="Paper PDF"></a>
 <a href="https://github.com/anon-push/TopoPT"><img src="https://img.shields.io/badge/GitHub-TopoPT-blue" alt="GitHub"></a>
@@ -21,7 +21,7 @@
 
 ## News
 
-- **2026-XX-XX:** TopoPT is here.
+- **Sep 24, 2026:** Accepted at NeurIPS 2026 main track as poster.
 
 ## Method Overview
 
