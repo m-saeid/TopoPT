@@ -4,7 +4,7 @@
 **NeurIPS 2026 (Main Track as Poster)**
 
 <a href="https://arxiv.org/abs/XXXX.XXXXX"><img src="https://img.shields.io/badge/arXiv-TopoPT-red" alt="Paper PDF"></a>
-<a href="https://github.com/anon-push/TopoPT"><img src="https://img.shields.io/badge/GitHub-TopoPT-blue" alt="GitHub"></a>
+<a href="https://github.com/m-saeid/TopoPT"><img src="https://img.shields.io/badge/GitHub-TopoPT-blue" alt="GitHub"></a>
 <a href="https://huggingface.co/cogniperceptai/TopoPT"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue" alt="HF Model"></a>
 
 </div>
@@ -17,7 +17,7 @@
 - **SRFD** is a training-only objective that matches pairwise cosine-similarity matrices between teacher (LitePT-S) and student (TrimPT) features at the compressed attention stages (stages 3–4). The teacher and projection heads are discarded after training, so **TopoPT has the same inference architecture, checkpoint size, FLOPs, and latency as TrimPT**.
 - On **ScanNet semantic segmentation**, TopoPT reaches **76.6% mIoU** — matching the official LitePT-S result (76.5%) with 2.18× fewer parameters and 1.96× fewer FLOPs.
 
-![TopoPT Teaser](https://github.com/anon-push/TopoPT/blob/main/image/teaser.jpg)
+![TopoPT Teaser](https://github.com/m-saeid/TopoPT/blob/main/image/teaser.jpg)
 
 ## News
 
@@ -39,7 +39,7 @@ TrimPT is derived from LitePT-S via a controlled compression study across three 
 
 TrimPT combines depth and width reduction while **preserving the 1024-token attention window**, yielding channels `(36, 54, 108, 180, 360)` and stage depths `(2, 2, 2, 4, 2)`.
 
-![TrimPT Architecture](https://github.com/anon-push/TopoPT/blob/main/image/backbone.jpg)
+![TrimPT Architecture](https://github.com/m-saeid/TopoPT/blob/main/image/backbone.jpg)
 
 ### SRFD: Stage-wise Relational Feature Distillation
 
@@ -56,7 +56,7 @@ L = L_seg + α·L_pw + β·L_rel    (α=1.0, β=2.0)
 
 After training, the teacher and projectors are discarded. **TopoPT inference is identical to TrimPT inference.**
 
-![SRFD Method](https://github.com/anon-push/TopoPT/blob/main/image/srfd.jpg)
+![SRFD Method](https://github.com/m-saeid/TopoPT/blob/main/image/srfd.jpg)
 
 ## Preparation
 
@@ -147,7 +147,7 @@ The following checkpoints correspond to the compression ablation study in the pa
 | LW-D | Patch size reduction only | 12.7M | 74.2 | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet-semseg-lw-d-100epoch/model) |
 | LW-E | Depth + width + patch | 5.8M | 74.1 | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet-semseg-lw-e-100epoch/model) |
 
-![Ablation: Accuracy-Efficiency](https://github.com/anon-push/TopoPT/blob/main/image/ablation.jpg)
+![Ablation: Accuracy-Efficiency](https://github.com/m-saeid/TopoPT/blob/main/image/ablation.jpg)
 
 ## Training
 
