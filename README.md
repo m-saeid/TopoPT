@@ -127,12 +127,12 @@ All TopoPT and TrimPT checkpoints are available on [Hugging Face](https://huggin
 
 | Model | Params | Benchmark | Epochs | mAP₅₀ | Config | Checkpoint |
 |:--|--:|:--:|--:|:--:|:--:|:--:|
-| TrimPT | 5.8M | ScanNet | 100 | 63.1 | [link](configs/scannet/insseg-lw-c-100epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet-insseg-lw-c-100epoch/model) |
-| TrimPT | 5.8M | ScanNet | 800 | 65.1 | [link](configs/scannet/insseg-lw-c-800epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet-insseg-lw-c-800epoch/model) |
-| **TopoPT** | **5.8M** | **ScanNet** | **100** | **63.9** | [link](configs/scannet/insseg-lw-c-kd-100epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet-insseg-lw-c-kd-100epoch/model) |
-| TrimPT | 5.8M | ScanNet200 | 100 | 26.3 | [link](configs/scannet200/insseg-lw-c-100epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet200-insseg-lw-c-100epoch/model) |
-| TrimPT | 5.8M | ScanNet200 | 800 | 31.7 | [link](configs/scannet200/insseg-lw-c-800epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet200-insseg-lw-c-800epoch/model) |
-| **TopoPT** | **5.8M** | **ScanNet200** | **100** | **33.0** | [link](configs/scannet200/insseg-lw-c-kd-100epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet200-insseg-lw-c-kd-100epoch/model) |
+| TrimPT | 7.6M | ScanNet | 100 | 63.1 | [link](configs/scannet/insseg-lw-c-100epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet-insseg-lw-c-100epoch/model) |
+| TrimPT | 7.6M | ScanNet | 800 | 65.1 | [link](configs/scannet/insseg-lw-c-800epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet-insseg-lw-c-800epoch/model) |
+| **TopoPT** | **7.6M** | **ScanNet** | **100** | **63.9** | [link](configs/scannet/insseg-lw-c-kd-100epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet-insseg-lw-c-kd-100epoch/model) |
+| TrimPT | 7.6M | ScanNet200 | 100 | 26.3 | [link](configs/scannet200/insseg-lw-c-100epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet200-insseg-lw-c-100epoch/model) |
+| TrimPT | 7.6M | ScanNet200 | 800 | 31.7 | [link](configs/scannet200/insseg-lw-c-800epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet200-insseg-lw-c-800epoch/model) |
+| **TopoPT** | **7.6M** | **ScanNet200** | **100** | **33.0** | [link](configs/scannet200/insseg-lw-c-kd-100epoch.py) | [Download](https://huggingface.co/cogniperceptai/TopoPT/tree/main/scannet200-insseg-lw-c-kd-100epoch/model) |
 
 ### Ablation Checkpoints
 
