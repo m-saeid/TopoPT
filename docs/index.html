@@ -6,27 +6,35 @@
 <title>TopoPT: Relational Feature Distillation for Lightweight 3D Point Cloud Segmentation</title>
 <meta name="description" content="TopoPT compresses LitePT-S into TrimPT (5.84M parameters for semantic segmentation) and trains it with Stage-wise Relational Feature Distillation (SRFD). 76.6% mIoU on ScanNet with 2.18x fewer parameters and 1.96x fewer FLOPs. NeurIPS 2026.">
 <meta name="theme-color" content="#f4f6f8">
+<meta name="author" content="Mohammad Saeid, Amir Salarpour, Pedram MohajerAnsari, Mert D. Pesé">
 <link rel="canonical" href="https://m-saeid.github.io/TopoPT/">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 
 <!-- Social preview. EDIT the domain if your GitHub Pages URL differs from https://m-saeid.github.io/TopoPT/ -->
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="TopoPT">
 <meta property="og:title" content="TopoPT: Relational Feature Distillation for Lightweight 3D Point Cloud Segmentation">
 <meta property="og:description" content="A lightweight point cloud segmentation model that matches LitePT-S on ScanNet with 2.18x fewer parameters. NeurIPS 2026.">
 <meta property="og:image" content="https://m-saeid.github.io/TopoPT/assets/img/thumbnail.png">
+<meta property="og:image:alt" content="TopoPT: relational feature distillation for lightweight 3D point cloud segmentation">
 <meta property="og:url" content="https://m-saeid.github.io/TopoPT/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="TopoPT: Relational Feature Distillation for Lightweight 3D Point Cloud Segmentation">
 <meta name="twitter:image" content="https://m-saeid.github.io/TopoPT/assets/img/thumbnail.png">
 
-<!-- Structured data for search engines. EDIT: add every author when the list is final. -->
+<!-- Structured data for search engines. -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "ScholarlyArticle",
   "headline": "Relational Feature Distillation for Lightweight 3D Point Cloud Segmentation",
   "description": "TopoPT compresses LitePT-S into TrimPT and trains it with Stage-wise Relational Feature Distillation (SRFD) for lightweight 3D point cloud segmentation.",
-  "author": [{ "@type": "Person", "name": "Mohammad Saeid" }],
+  "author": [
+    { "@type": "Person", "name": "Mohammad Saeid", "url": "http://m-saeid.github.io/" },
+    { "@type": "Person", "name": "Amir Salarpour", "url": "https://asalarpour.github.io/" },
+    { "@type": "Person", "name": "Pedram MohajerAnsari", "url": "https://pedram-mohajer.github.io/" },
+    { "@type": "Person", "name": "Mert D. Pesé", "url": "https://mpese.com/" }
+  ],
   "isPartOf": { "@type": "Event", "name": "NeurIPS 2026" },
   "image": "https://m-saeid.github.io/TopoPT/assets/img/thumbnail.png",
   "url": "https://m-saeid.github.io/TopoPT/"
@@ -37,6 +45,23 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/css/style.css">
+<style>
+  /* Affiliation logos (kept here so index.html is the only file to update).
+     The Clemson PNG has a large transparent margin, so it is cropped to its
+     visible wordmark with the wrapper below. */
+  .affil-logos { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 28px; margin: 20px 0 28px; }
+  .affil-logos a, .affil-logos span.logo { display: block; line-height: 0; }
+  .affil-logos .logo-crop { position: relative; overflow: hidden; height: 38px; aspect-ratio: 1204 / 268; }
+  .affil-logos .logo-crop img { position: absolute; left: -3.156%; top: -99.25%; width: 106.31%; height: auto; max-width: none; }
+  .affil-logos .logo-tiger img { display: block; height: 36px; width: auto; }
+  .affil-logos .rule { width: 1px; height: 30px; background: var(--line); }
+  .affil-logos a:focus-visible { outline-offset: 6px; }
+  @media (max-width: 780px) {
+    .affil-logos { gap: 14px 22px; margin: 16px 0 22px; }
+    .affil-logos .logo-crop { height: 32px; }
+    .affil-logos .logo-tiger img { height: 30px; }
+  }
+</style>
 </head>
 <body>
 <a class="skip" href="#top">Skip to content</a>
@@ -64,9 +89,18 @@
     <p class="venue">NeurIPS 2026, Main Track, Poster</p>
     <h1>Relational Feature Distillation for Lightweight 3D Point Cloud Segmentation</h1>
 
-    <!-- EDIT: authors and affiliations. Add one <a> per author, separated by a comma. -->
     <p class="authors"><a href="http://m-saeid.github.io/">Mohammad Saeid</a>, <a href="https://asalarpour.github.io/">Amir Salarpour</a>,
     <a href="https://pedram-mohajer.github.io/">Pedram MohajerAnsari</a>, <a href="https://mpese.com/">Mert D. Pesé</a></p>
+
+    <div class="affil-logos" role="group" aria-label="Affiliations">
+      <a class="logo-crop" href="https://www.clemson.edu/" target="_blank" rel="noopener" aria-label="Clemson University">
+        <img src="assets/img/clemson-university-logo.png" width="1280" height="800" alt="Clemson University" decoding="async">
+      </a>
+      <span class="rule" aria-hidden="true"></span>
+      <span class="logo logo-tiger">
+        <img src="assets/img/tigersec-logo.webp" width="1200" height="259" alt="TigerSec Laboratory" decoding="async">
+      </span>
+    </div>
 
     <div class="links">
       <!-- Paper, OpenReview and Video switch on from assets/config.js. -->
@@ -118,6 +152,8 @@
           <canvas id="cv-diff" role="img" aria-label="Absolute difference between the teacher and student matrices."></canvas>
         </div>
       </div>
+
+      <noscript><p class="demo-note">The interactive demo needs JavaScript. The figure under &ldquo;At a glance&rdquo; shows the same idea as a static schematic.</p></noscript>
 
       <div class="demo-controls">
         <button class="btn" id="play" type="button">Play</button>
@@ -446,12 +482,11 @@ python tools/test.py \
       <p>If you find this work useful, please cite it, and please cite LitePT, on which TopoPT is built.</p>
     </div>
 
-    <!-- EDIT: replace with the final BibTeX (authors, booktitle) once the camera-ready entry is out. -->
-    <div class="code"><button class="copy" type="button">Copy</button><pre><code>@inproceedings{topopt2026,
-    title={{Relational Feature Distillation for Lightweight 3D Point Cloud Segmentation}},
-    author={Saeid, Mohammad and Salarpour, Amir and MohajerAnsari, Pedram and Pesé, Mert D.},
-    booktitle={...},
-    year={2026}
+    <div class="code"><button class="copy" type="button">Copy</button><pre><code>@inproceedings{saeid2026rfd,
+  author = {Saeid, Mohammad and Salarpour, Amir and MohajerAnsari, Pedram and Pesé, Mert D},
+  booktitle = {Annual Conference on Neural Information Processing Systems (NeurIPS'26)},
+  title = {Relational Feature Distillation for Lightweight 3D Point Cloud Segmentation},
+  year = {2026}
 }</code></pre></div>
 
     <div class="code"><button class="copy" type="button">Copy</button><pre><code>@inproceedings{yuelitept2026,
